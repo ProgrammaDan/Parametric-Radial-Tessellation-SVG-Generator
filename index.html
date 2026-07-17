@@ -1,0 +1,2220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tessella — radial tessellation editor</title>
+<style>
+:root {
+  --chrome: #17181b;
+  --panel: #1e2024;
+  --panel-2: #24262b;
+  --line: #33363c;
+  --ink: #d9d7d1;
+  --ink-dim: #8b8a85;
+  --ink-faint: #5c5b57;
+  --accent: #2456e6;
+  --accent-soft: rgba(36, 86, 230, 0.14);
+  --ok: #3fae7a;
+  --warn: #d9a13c;
+  --danger: #cf5a4e;
+  --canvas: #d9d6cd;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--chrome);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  overflow: hidden;
+}
+#app { display: flex; flex-direction: column; height: 100%; }
+
+/* ---------- toolbar ---------- */
+#toolbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+#brand {
+  font-family: var(--mono);
+  font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink);
+  margin-right: 14px; user-select: none;
+}
+#brand b { color: var(--accent); font-weight: 700; }
+.tb-sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
+button {
+  font-family: var(--mono); font-size: 12px;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: border-color .1s, background .1s, color .1s;
+}
+button:hover:not(:disabled) { border-color: #4a4e56; }
+button:disabled { color: var(--ink-faint); cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { background: #1f4ccc; }
+button.primary:disabled { background: var(--panel-2); border-color: var(--line); color: var(--ink-faint); }
+button.active { border-color: var(--accent); color: #9db4f5; background: var(--accent-soft); }
+#tb-status { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- main split ---------- */
+#main { display: flex; flex: 1 1 auto; min-height: 0; }
+
+/* ---------- settings panel ---------- */
+#panel {
+  width: 264px; flex: 0 0 auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 14px 14px 24px;
+}
+#panel.collapsed { display: none; }
+.sec { margin-bottom: 18px; }
+.sec h2 {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-dim);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 5px; margin-bottom: 9px;
+}
+.row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 8px; }
+.row label { color: var(--ink-dim); font-size: 12px; flex: 1 1 auto; }
+.row input[type="number"], .row input[type="text"] {
+  width: 74px; font-family: var(--mono); font-size: 12px;
+  background: var(--chrome); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 3px;
+  padding: 4px 6px; text-align: right;
+}
+.row input:focus { outline: none; border-color: var(--accent); }
+.row input.bad { border-color: var(--danger); }
+.hint { font-size: 11px; color: var(--ink-faint); margin: -2px 0 8px; }
+
+/* distribution table */
+#dist-rows .drow { display: flex; gap: 6px; margin-bottom: 5px; align-items: center; }
+#dist-rows input { width: 64px; font-family: var(--mono); font-size: 12px; background: var(--chrome); color: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 4px 6px; text-align: right; }
+#dist-rows input.bad { border-color: var(--danger); }
+#dist-rows .dlabel { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); width: 34px; }
+.drow button { padding: 3px 8px; font-size: 11px; }
+#dist-sum { font-family: var(--mono); font-size: 11px; margin: 6px 0 4px; }
+#dist-sum.ok { color: var(--ok); }
+#dist-sum.bad { color: var(--danger); }
+#dist-add { width: 100%; margin-top: 2px; }
+
+/* stats */
+#stats { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
+#stats .srow { display: flex; justify-content: space-between; margin-bottom: 4px; }
+#stats .srow b { color: var(--ink); font-weight: 500; }
+.bars { margin-top: 8px; }
+.bar-row { display: grid; grid-template-columns: 26px 1fr; gap: 6px; align-items: center; margin-bottom: 5px; }
+.bar-row .k { color: var(--ink-faint); }
+.bar-pair { display: flex; flex-direction: column; gap: 2px; }
+.bar { height: 4px; border-radius: 2px; background: var(--line); position: relative; }
+.bar i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; display: block; }
+.bar.target i { background: var(--ink-faint); }
+.bar.actual i { background: var(--accent); }
+.legend { display: flex; gap: 12px; margin-top: 6px; font-size: 10px; color: var(--ink-faint); }
+.legend .sw { display: inline-block; width: 10px; height: 4px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+
+/* ---------- canvas ---------- */
+#canvas-wrap { position: relative; flex: 1 1 auto; min-width: 0; background: var(--canvas); }
+#canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: default; }
+#canvas.panning { cursor: grabbing; }
+#empty-state {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #8f8d85; font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em;
+  pointer-events: none; text-align: center; line-height: 1.9;
+}
+#statusbar {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; gap: 16px; align-items: center;
+  padding: 5px 12px;
+  font-family: var(--mono); font-size: 11px; color: #6d6c66;
+  background: rgba(217, 214, 205, 0.88);
+  border-top: 1px solid #c4c1b8;
+  pointer-events: none;
+}
+#statusbar .sel { color: #3a3a36; }
+
+/* color picker */
+#picker {
+  position: absolute; display: none; z-index: 30;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.45);
+  width: 168px;
+}
+#picker.open { display: block; }
+#picker h3 { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 8px; }
+#picker input[type="color"] { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 4px; background: var(--chrome); padding: 2px; cursor: pointer; }
+#picker .swatches { display: flex; gap: 6px; margin-top: 8px; }
+#picker .swatches button { width: 30px; height: 24px; padding: 0; border-radius: 3px; }
+
+/* context menu */
+#ctx {
+  position: fixed; display: none; z-index: 40;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 4px; min-width: 168px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.45);
+  font-family: var(--mono); font-size: 12px;
+}
+#ctx.open { display: block; }
+#ctx .mi { padding: 6px 10px; border-radius: 4px; cursor: pointer; color: var(--ink); }
+#ctx .mi:hover { background: var(--accent-soft); color: #b7c8f7; }
+#ctx .mi.danger:hover { background: rgba(207,90,78,.14); color: #e89a91; }
+
+/* toast */
+#toast {
+  position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%) translateY(8px);
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-left: 3px solid var(--warn);
+  border-radius: 5px; padding: 9px 14px;
+  font-size: 12px; max-width: 460px;
+  opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s;
+  z-index: 50; box-shadow: 0 8px 28px rgba(0,0,0,.35);
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* SVG element styling */
+.face { cursor: pointer; }
+.edge-hit { stroke: transparent; fill: none; cursor: pointer; vector-effect: non-scaling-stroke; stroke-width: 9px; }
+.naked-edge { stroke: #000; fill: none; pointer-events: none; }
+.vert { fill: #8a887f; stroke: #55534d; cursor: pointer; transition: fill .08s; }
+.vert:hover { fill: var(--accent); }
+.sel-face-outline { fill: rgba(36,86,230,.13); stroke: var(--accent); vector-effect: non-scaling-stroke; stroke-width: 2px; pointer-events: none; }
+.sel-edge { stroke: var(--accent); vector-effect: non-scaling-stroke; stroke-width: 3px; fill: none; pointer-events: none; stroke-linecap: round; }
+.sel-vert { fill: var(--accent); stroke: #fff; pointer-events: none; }
+.sel-vert.second { fill: #7d97ea; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <span id="brand">Tessell<b>a</b></span>
+    <button id="bt-generate" class="primary">Generate</button>
+    <span class="tb-sep"></span>
+    <button id="bt-undo" disabled>Undo</button>
+    <button id="bt-redo" disabled>Redo</button>
+    <span class="tb-sep"></span>
+    <button id="bt-addvert" disabled>Add vertex</button>
+    <button id="bt-addedge" disabled>Add edge</button>
+    <button id="bt-delete" disabled>Delete</button>
+    <button id="bt-paint" disabled>Paint</button>
+    <span class="tb-sep"></span>
+    <button id="bt-export" disabled>Export SVG</button>
+    <button id="bt-panel" title="Show or hide settings">Settings</button>
+    <span id="tb-status"></span>
+  </div>
+  <div id="main">
+    <div id="panel">
+      <div class="sec">
+        <h2>Tiers</h2>
+        <div class="row"><label for="p-tiers">Number of tiers</label><input id="p-tiers" type="number" min="1" step="1" value="3"></div>
+        <div class="row"><label for="p-width">Initial radial width</label><input id="p-width" type="number" min="1" step="1" value="90"></div>
+        <div class="row"><label for="p-scale">Tier scale factor</label><input id="p-scale" type="number" min="0.1" step="0.05" value="1.35"></div>
+      </div>
+      <div class="sec">
+        <h2>Density</h2>
+        <div class="row"><label for="p-density">Initial vertex density</label><input id="p-density" type="number" min="0.001" step="0.001" value="0.056"></div>
+        <p class="hint">Edge length at the origin ≈ 1 / density.</p>
+        <div class="row"><label for="p-ratio">Initial / final ratio</label><input id="p-ratio" type="number" min="1.01" step="0.1" value="3"></div>
+        <div class="row"><label for="p-irr">Irregularity (0–1)</label><input id="p-irr" type="number" min="0" max="1" step="0.05" value="0.45"></div>
+      </div>
+      <div class="sec">
+        <h2>Polygon mix</h2>
+        <div id="dist-rows"></div>
+        <div id="dist-sum"></div>
+        <button id="dist-add">+ Add polygon type</button>
+        <p class="hint" style="margin-top:6px">A bias, not a guarantee — collision repair and gap closure fill with what fits. Compare against the plot readout after generating.</p>
+      </div>
+      <div class="sec">
+        <h2>Fill &amp; stroke</h2>
+        <div class="row"><label for="p-black">Black fill probability</label><input id="p-black" type="number" min="0" max="1" step="0.05" value="0.28"></div>
+        <div class="row"><label for="p-stroke">Stroke width</label><input id="p-stroke" type="number" min="0.1" step="0.1" value="1.5"></div>
+        <div class="row"><label for="p-seed">Seed (blank = random)</label><input id="p-seed" type="text" value="" placeholder="—"></div>
+      </div>
+      <div class="sec" id="stats-sec" style="display:none">
+        <h2>Plot readout</h2>
+        <div id="stats"></div>
+      </div>
+    </div>
+    <div id="canvas-wrap">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="empty-state">no tessellation<br>set parameters and press generate</div>
+      <div id="statusbar"><span id="sb-sel" class="sel">—</span><span id="sb-zoom"></span><span id="sb-hint"></span></div>
+      <div id="picker">
+        <h3>Fill</h3>
+        <input type="color" id="picker-color" value="#ffffff">
+        <div class="swatches">
+          <button data-c="#000000" style="background:#000"></button>
+          <button data-c="#ffffff" style="background:#fff"></button>
+          <button data-c="#cf5a4e" style="background:#cf5a4e"></button>
+          <button data-c="#2456e6" style="background:#2456e6"></button>
+          <button data-c="#d9a13c" style="background:#d9a13c"></button>
+        </div>
+      </div>
+      <div id="toast"></div>
+    </div>
+  </div>
+</div>
+<div id="ctx"></div>
+<script>"use strict";
+(() => {
+  var __defProp = Object.defineProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+
+  // src/geom.ts
+  var sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+  var add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y });
+  var mul = (a, s) => ({ x: a.x * s, y: a.y * s });
+  var len = (a) => Math.hypot(a.x, a.y);
+  var dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  var norm = (a) => {
+    const l = len(a) || 1;
+    return { x: a.x / l, y: a.y / l };
+  };
+  var cross = (a, b) => a.x * b.y - a.y * b.x;
+  function shoelace(pts) {
+    let s = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      s += a.x * b.y - b.x * a.y;
+    }
+    return s;
+  }
+  function centroid(pts) {
+    let a = 0, cx = 0, cy = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length];
+      const w = p.x * q.y - q.x * p.y;
+      a += w;
+      cx += (p.x + q.x) * w;
+      cy += (p.y + q.y) * w;
+    }
+    if (Math.abs(a) < 1e-12) {
+      let mx = 0, my = 0;
+      for (const p of pts) {
+        mx += p.x;
+        my += p.y;
+      }
+      return { x: mx / pts.length, y: my / pts.length };
+    }
+    return { x: cx / (3 * a), y: cy / (3 * a) };
+  }
+  var EPS = 1e-9;
+  function orient(a, b, c) {
+    const v = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    const m = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y), Math.abs(c.x - a.x), Math.abs(c.y - a.y), 1);
+    if (Math.abs(v) < EPS * m * m) return 0;
+    return v > 0 ? 1 : -1;
+  }
+  function onSegment(a, b, p) {
+    return Math.min(a.x, b.x) - EPS <= p.x && p.x <= Math.max(a.x, b.x) + EPS && Math.min(a.y, b.y) - EPS <= p.y && p.y <= Math.max(a.y, b.y) + EPS;
+  }
+  function segmentsConflict(p1, p2, p3, p4, tol) {
+    const o1 = orient(p1, p2, p3), o2 = orient(p1, p2, p4);
+    const o3 = orient(p3, p4, p1), o4 = orient(p3, p4, p2);
+    const sharesEnd = (a, b) => dist(a, b) <= tol;
+    const shared = [];
+    for (const a of [p1, p2]) for (const b of [p3, p4]) if (sharesEnd(a, b)) shared.push(a);
+    if (o1 !== o2 && o3 !== o4 && o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0) {
+      return true;
+    }
+    const touchPts = [];
+    if (o1 === 0 && onSegment(p1, p2, p3)) touchPts.push(p3);
+    if (o2 === 0 && onSegment(p1, p2, p4)) touchPts.push(p4);
+    if (o3 === 0 && onSegment(p3, p4, p1)) touchPts.push(p1);
+    if (o4 === 0 && onSegment(p3, p4, p2)) touchPts.push(p2);
+    if (touchPts.length === 0 && (o1 !== o2 && o3 !== o4)) {
+      return true;
+    }
+    for (const t of touchPts) {
+      if (!shared.some((s) => dist(s, t) <= tol)) return true;
+    }
+    if (o1 === 0 && o2 === 0 && o3 === 0 && o4 === 0) {
+      const ax = Math.abs(p2.x - p1.x) > Math.abs(p2.y - p1.y);
+      const key = (p) => ax ? p.x : p.y;
+      const lo1 = Math.min(key(p1), key(p2)), hi1 = Math.max(key(p1), key(p2));
+      const lo2 = Math.min(key(p3), key(p4)), hi2 = Math.max(key(p3), key(p4));
+      const overlap = Math.min(hi1, hi2) - Math.max(lo1, lo2);
+      if (overlap > tol) return true;
+    }
+    return false;
+  }
+  function pointStrictlyInPolygon(p, poly, edgeTol) {
+    for (let i = 0; i < poly.length; i++) {
+      if (distToSegment(p, poly[i], poly[(i + 1) % poly.length]) <= edgeTol) return false;
+    }
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if (a.y > p.y !== b.y > p.y && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+  function distToSegment(p, a, b) {
+    const l2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+    if (l2 === 0) return dist(p, a);
+    let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return dist(p, { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+  }
+  function polygonIsSimple(pts, tol) {
+    const n = pts.length;
+    if (n < 3) return false;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const adjacent = j === i + 1 || i === 0 && j === n - 1;
+        const a1 = pts[i], a2 = pts[(i + 1) % n];
+        const b1 = pts[j], b2 = pts[(j + 1) % n];
+        if (adjacent) {
+          if (segmentsConflict(a1, a2, b1, b2, tol)) return false;
+        } else {
+          if (segmentsConflict(a1, a2, b1, b2, tol * 0.01)) return false;
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (dist(pts[i], pts[(i + 1) % n]) <= tol) return false;
+    }
+    return true;
+  }
+  function convexHull(pts) {
+    const s = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
+    if (s.length <= 2) return s;
+    const half = (arr) => {
+      const h = [];
+      for (const p of arr) {
+        while (h.length >= 2 && cross(sub(h[h.length - 1], h[h.length - 2]), sub(p, h[h.length - 2])) <= 0) h.pop();
+        h.push(p);
+      }
+      return h;
+    };
+    const lower = half(s), upper = half([...s].reverse());
+    return lower.slice(0, -1).concat(upper.slice(0, -1));
+  }
+  function minRectAspect(pts) {
+    const hull = convexHull(pts);
+    if (hull.length < 3) return 0;
+    let best = Infinity, bestRatio = 0;
+    for (let deg = 0; deg < 180; deg++) {
+      const t = deg * Math.PI / 180;
+      const c = Math.cos(t), s = Math.sin(t);
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const p of hull) {
+        const x = p.x * c + p.y * s;
+        const y = -p.x * s + p.y * c;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      const w = maxX - minX, h = maxY - minY;
+      const area = w * h;
+      if (area < best) {
+        best = area;
+        const short = Math.min(w, h), long = Math.max(w, h);
+        bestRatio = long > 0 ? short / long : 0;
+      }
+    }
+    return bestRatio;
+  }
+  function makeRng(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a |= 0;
+      a = a + 1831565813 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  // src/graph.ts
+  var uid = () => globalThis.crypto?.randomUUID?.() ?? `id-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+  var pairKey = (a, b) => a < b ? `${a}|${b}` : `${b}|${a}`;
+  var Graph = class _Graph {
+    constructor() {
+      __publicField(this, "vertices", /* @__PURE__ */ new Map());
+      __publicField(this, "edges", /* @__PURE__ */ new Map());
+      __publicField(this, "faces", /* @__PURE__ */ new Map());
+      __publicField(this, "edgeByVerts", /* @__PURE__ */ new Map());
+      __publicField(this, "vertexEdges", /* @__PURE__ */ new Map());
+    }
+    // ---- basic accessors ----
+    v(id) {
+      const v = this.vertices.get(id);
+      if (!v) throw new Error(`no vertex ${id}`);
+      return v;
+    }
+    e(id) {
+      const e = this.edges.get(id);
+      if (!e) throw new Error(`no edge ${id}`);
+      return e;
+    }
+    f(id) {
+      const f = this.faces.get(id);
+      if (!f) throw new Error(`no face ${id}`);
+      return f;
+    }
+    pt(id) {
+      const v = this.v(id);
+      return { x: v.x, y: v.y };
+    }
+    edgeBetween(a, b) {
+      const id = this.edgeByVerts.get(pairKey(a, b));
+      return id ? this.edges.get(id) : void 0;
+    }
+    incidentEdges(vid) {
+      return [...this.vertexEdges.get(vid) ?? []].map((id) => this.e(id));
+    }
+    degree(vid) {
+      return this.vertexEdges.get(vid)?.size ?? 0;
+    }
+    facePts(fid) {
+      return this.f(fid).verts.map((v) => this.pt(v));
+    }
+    faceCentroid(fid) {
+      return centroid(this.facePts(fid));
+    }
+    /** Direction the face traverses edge (a,b): returns [from, to] or null. */
+    faceTraversal(fid, eid) {
+      const f = this.f(fid), e = this.e(eid);
+      for (let i = 0; i < f.verts.length; i++) {
+        const u = f.verts[i], w = f.verts[(i + 1) % f.verts.length];
+        if (u === e.a && w === e.b || u === e.b && w === e.a) return [u, w];
+      }
+      return null;
+    }
+    isBoundaryVertex(vid) {
+      return this.incidentEdges(vid).some((e) => e.faces.length < 2);
+    }
+    // ---- mutations ----
+    addVertex(x, y, id) {
+      const v = { id: id ?? uid(), x, y };
+      this.vertices.set(v.id, v);
+      this.vertexEdges.set(v.id, /* @__PURE__ */ new Set());
+      return v;
+    }
+    addEdge(a, b, id) {
+      if (a === b) throw new Error("edge endpoints must differ");
+      if (this.edgeByVerts.has(pairKey(a, b))) throw new Error("duplicate edge");
+      const e = { id: id ?? uid(), a, b, faces: [] };
+      this.edges.set(e.id, e);
+      this.edgeByVerts.set(pairKey(a, b), e.id);
+      this.vertexEdges.get(a).add(e.id);
+      this.vertexEdges.get(b).add(e.id);
+      return e;
+    }
+    removeEdge(id) {
+      const e = this.e(id);
+      if (e.faces.length > 0) throw new Error("cannot remove edge with faces");
+      this.edges.delete(id);
+      this.edgeByVerts.delete(pairKey(e.a, e.b));
+      this.vertexEdges.get(e.a)?.delete(id);
+      this.vertexEdges.get(e.b)?.delete(id);
+    }
+    removeVertexIfOrphan(vid) {
+      if ((this.vertexEdges.get(vid)?.size ?? 0) === 0) {
+        this.vertices.delete(vid);
+        this.vertexEdges.delete(vid);
+        return true;
+      }
+      return false;
+    }
+    /**
+     * Register a face over an ordered vertex loop. Creates any missing edges.
+     * Normalizes to shoelace-positive orientation. Throws if any edge already
+     * has two faces.
+     */
+    addFace(verts, fill, tier, id) {
+      if (verts.length < 3) throw new Error("face needs >= 3 vertices");
+      if (new Set(verts).size !== verts.length) throw new Error("face loop has repeated vertex");
+      let loop = verts;
+      if (shoelace(loop.map((v) => this.pt(v))) < 0) loop = [...loop].reverse();
+      const f = { id: id ?? uid(), verts: loop, fill, tier };
+      for (let i = 0; i < loop.length; i++) {
+        const ex = this.edgeBetween(loop[i], loop[(i + 1) % loop.length]);
+        if (ex && ex.faces.length >= 2) throw new Error("edge already has two faces");
+      }
+      for (let i = 0; i < loop.length; i++) {
+        const a = loop[i], b = loop[(i + 1) % loop.length];
+        const e = this.edgeBetween(a, b) ?? this.addEdge(a, b);
+        e.faces.push(f.id);
+      }
+      this.faces.set(f.id, f);
+      return f;
+    }
+    /** Detach a face from its edges (does not remove edges/vertices). */
+    removeFace(fid) {
+      const f = this.f(fid);
+      for (let i = 0; i < f.verts.length; i++) {
+        const e = this.edgeBetween(f.verts[i], f.verts[(i + 1) % f.verts.length]);
+        if (e) e.faces = e.faces.filter((x) => x !== fid);
+      }
+      this.faces.delete(fid);
+    }
+    // ---- boundary loops ----
+    /**
+     * Trace boundary loops as ordered vertex lists. A boundary directed edge is
+     * the reverse of its (single) face's traversal; naked edges contribute both
+     * directions. Hole loops come out shoelace-positive; the outer perimeter is
+     * shoelace-negative.
+     */
+    boundaryLoops() {
+      const out = /* @__PURE__ */ new Map();
+      const push = (from, to) => {
+        const d = { from, to, key: `${from}>${to}` };
+        if (!out.has(from)) out.set(from, []);
+        out.get(from).push(d);
+      };
+      for (const e of this.edges.values()) {
+        if (e.faces.length >= 2) continue;
+        if (e.faces.length === 0) {
+          push(e.a, e.b);
+          push(e.b, e.a);
+          continue;
+        }
+        const tr = this.faceTraversal(e.faces[0], e.id);
+        if (!tr) continue;
+        push(tr[1], tr[0]);
+      }
+      const used = /* @__PURE__ */ new Set();
+      const loops = [];
+      for (const list of out.values()) {
+        for (const start of list) {
+          if (used.has(start.key)) continue;
+          const loop = [];
+          let cur = start;
+          let guard = 0;
+          while (!used.has(cur.key) && guard++ < 1e6) {
+            used.add(cur.key);
+            loop.push(cur.from);
+            const cands = (out.get(cur.to) ?? []).filter((d) => !used.has(d.key));
+            if (cands.length === 0) break;
+            let next = cands[0];
+            if (cands.length > 1) {
+              const p = this.pt(cur.from), q = this.pt(cur.to);
+              const inAngle = Math.atan2(p.y - q.y, p.x - q.x);
+              let bestTurn = Infinity;
+              for (const c of cands) {
+                const r = this.pt(c.to);
+                const outAngle = Math.atan2(r.y - q.y, r.x - q.x);
+                let turn = inAngle - outAngle;
+                while (turn <= 1e-12) turn += 2 * Math.PI;
+                while (turn > 2 * Math.PI) turn -= 2 * Math.PI;
+                if (turn < bestTurn) {
+                  bestTurn = turn;
+                  next = c;
+                }
+              }
+            }
+            cur = next;
+          }
+          if (loop.length >= 3) loops.push(loop);
+        }
+      }
+      return loops;
+    }
+    // ---- serialization ----
+    toJSON() {
+      return {
+        vertices: [...this.vertices.values()].map((v) => ({ ...v })),
+        edges: [...this.edges.values()].map((e) => ({ ...e, faces: [...e.faces] })),
+        faces: [...this.faces.values()].map((f) => ({ ...f, verts: [...f.verts] }))
+      };
+    }
+    static fromJSON(j) {
+      const g = new _Graph();
+      for (const v of j.vertices) {
+        g.vertices.set(v.id, { ...v });
+        g["vertexEdges"].set(v.id, /* @__PURE__ */ new Set());
+      }
+      for (const e of j.edges) {
+        g.edges.set(e.id, { ...e, faces: [...e.faces] });
+        g["edgeByVerts"].set(pairKey(e.a, e.b), e.id);
+        g["vertexEdges"].get(e.a).add(e.id);
+        g["vertexEdges"].get(e.b).add(e.id);
+      }
+      for (const f of j.faces) g.faces.set(f.id, { ...f, verts: [...f.verts] });
+      return g;
+    }
+  };
+  var SpatialIndex = class {
+    constructor(cellSize) {
+      __publicField(this, "cell");
+      __publicField(this, "verts", /* @__PURE__ */ new Map());
+      __publicField(this, "segs", /* @__PURE__ */ new Map());
+      this.cell = Math.max(cellSize, 1e-6);
+    }
+    key(cx, cy) {
+      return `${cx},${cy}`;
+    }
+    cellOf(x, y) {
+      return [Math.floor(x / this.cell), Math.floor(y / this.cell)];
+    }
+    cellsForBBox(x0, y0, x1, y1) {
+      const [ax, ay] = this.cellOf(Math.min(x0, x1), Math.min(y0, y1));
+      const [bx, by] = this.cellOf(Math.max(x0, x1), Math.max(y0, y1));
+      const keys = [];
+      for (let cx = ax; cx <= bx; cx++) for (let cy = ay; cy <= by; cy++) keys.push(this.key(cx, cy));
+      return keys;
+    }
+    addVertex(id, p) {
+      const [cx, cy] = this.cellOf(p.x, p.y);
+      const k = this.key(cx, cy);
+      if (!this.verts.has(k)) this.verts.set(k, /* @__PURE__ */ new Set());
+      this.verts.get(k).add(id);
+    }
+    addSegment(id, a, b) {
+      for (const k of this.cellsForBBox(a.x, a.y, b.x, b.y)) {
+        if (!this.segs.has(k)) this.segs.set(k, /* @__PURE__ */ new Set());
+        this.segs.get(k).add(id);
+      }
+    }
+    vertsNear(p, r) {
+      const ids = /* @__PURE__ */ new Set();
+      for (const k of this.cellsForBBox(p.x - r, p.y - r, p.x + r, p.y + r)) {
+        for (const id of this.verts.get(k) ?? []) ids.add(id);
+      }
+      return [...ids];
+    }
+    vertsInBBox(x0, y0, x1, y1) {
+      const ids = /* @__PURE__ */ new Set();
+      for (const k of this.cellsForBBox(x0, y0, x1, y1)) {
+        for (const id of this.verts.get(k) ?? []) ids.add(id);
+      }
+      return [...ids];
+    }
+    segsNearBBox(x0, y0, x1, y1, pad) {
+      const ids = /* @__PURE__ */ new Set();
+      for (const k of this.cellsForBBox(x0 - pad, y0 - pad, x1 + pad, y1 + pad)) {
+        for (const id of this.segs.get(k) ?? []) ids.add(id);
+      }
+      return [...ids];
+    }
+  };
+
+  // src/generate.ts
+  function tierRadii(p) {
+    const R = [0];
+    for (let i = 0; i < p.tiers; i++) R.push(R[i] + p.tierWidth * Math.pow(p.tierScale, i));
+    return R;
+  }
+  function generate(p) {
+    const seed = p.seed ?? Math.random() * 2 ** 31 | 0;
+    const rng = makeRng(seed);
+    const R = tierRadii(p);
+    const RN = R[R.length - 1];
+    const k = (p.densityRatio - 1) / RN;
+    const L = (r) => (1 + k * Math.max(0, r)) / p.density;
+    const tierOf = (c) => {
+      const r = Math.hypot(c.x, c.y);
+      for (let i = 0; i < p.tiers; i++) if (r < R[i + 1]) return i;
+      return p.tiers - 1;
+    };
+    const g = new Graph();
+    const idx = new SpatialIndex(L(RN / 2));
+    const addV = (pt) => {
+      const v = g.addVertex(pt.x, pt.y);
+      idx.addVertex(v.id, pt);
+      return v;
+    };
+    const addE = (a, b) => {
+      const e = g.addEdge(a, b);
+      idx.addSegment(e.id, g.pt(a), g.pt(b));
+      return e;
+    };
+    const distTable = p.distribution.filter((d) => d.probability > 0);
+    const sampleSides = () => {
+      let r = rng(), acc = 0;
+      for (const d of distTable) {
+        acc += d.probability;
+        if (r <= acc) return d.sides;
+      }
+      return distTable[distTable.length - 1]?.sides ?? 3;
+    };
+    const perturb = (pt, scale) => {
+      const ang = rng() * 2 * Math.PI;
+      const mag = rng() * p.irregularity * 0.3 * scale;
+      return { x: pt.x + Math.cos(ang) * mag, y: pt.y + Math.sin(ang) * mag };
+    };
+    {
+      let placed = false;
+      for (let attempt = 0; attempt < 12 && !placed; attempt++) {
+        const n = sampleSides();
+        const l0 = L(0);
+        const Rc = l0 / (2 * Math.sin(Math.PI / n));
+        const rot = rng() * 2 * Math.PI;
+        const pts = [];
+        for (let i = 0; i < n; i++) {
+          const a = rot + i * 2 * Math.PI / n;
+          pts.push(perturb({ x: Math.cos(a) * Rc, y: Math.sin(a) * Rc }, l0));
+        }
+        if (!polygonIsSimple(pts, l0 * 1e-4)) continue;
+        if (minRectAspect(pts) < 1 / 3) continue;
+        const ids = pts.map((pt) => addV(pt).id);
+        const loop = shoelace(pts) >= 0 ? ids : ids.reverse();
+        for (let i = 0; i < loop.length; i++) if (!g.edgeBetween(loop[i], loop[(i + 1) % loop.length])) addE(loop[i], loop[(i + 1) % loop.length]);
+        g.addFace(loop, "#ffffff", 0);
+        placed = true;
+      }
+      if (!placed) throw new Error("could not place seed polygon");
+    }
+    const queue = [...g.edges.keys()];
+    let deferred = 0;
+    const openSideInfo = (e) => {
+      if (e.faces.length !== 1) return null;
+      const tr = g.faceTraversal(e.faces[0], e.id);
+      if (!tr) return null;
+      const [u, w] = tr;
+      const d = norm(sub(g.pt(w), g.pt(u)));
+      return { u, w, nOpen: { x: d.y, y: -d.x } };
+    };
+    const buildCandidate = (u, w, n, targetL) => {
+      const A = g.pt(u), B = g.pt(w);
+      const c = dist(A, B);
+      if (c < 1e-9) return null;
+      let T = (n - 1) * targetL;
+      if (T <= c * 1.02) T = c * 1.1;
+      let lo = 1e-6, hi = Math.PI - 1e-6;
+      const ratio = T / c;
+      for (let it = 0; it < 60; it++) {
+        const mid = (lo + hi) / 2;
+        mid / Math.sin(mid) < ratio ? lo = mid : hi = mid;
+      }
+      const phi = (lo + hi) / 2;
+      const Rc = c / (2 * Math.sin(phi));
+      const midPt = mul(add(A, B), 0.5);
+      const d = norm(sub(B, A));
+      const nOpen = { x: d.y, y: -d.x };
+      const center = sub(midPt, mul(nOpen, Rc * Math.cos(phi)));
+      const angA = Math.atan2(A.y - center.y, A.x - center.x);
+      let sign = 1;
+      {
+        const m1 = { x: center.x + Rc * Math.cos(angA + phi), y: center.y + Rc * Math.sin(angA + phi) };
+        const cr = cross(d, sub(m1, A));
+        if (cr >= 0) sign = -1;
+      }
+      const rawPts = [];
+      for (let i = 1; i <= n - 2; i++) {
+        const a = angA + sign * 2 * phi * (i / (n - 1));
+        rawPts.push(perturb({ x: center.x + Rc * Math.cos(a), y: center.y + Rc * Math.sin(a) }, targetL));
+      }
+      const snapR = 0.4 * targetL;
+      const loop = [w, u];
+      const existing = [w, u];
+      for (const rp of rawPts) {
+        let snapped = null;
+        let bestD = snapR;
+        for (const vid of idx.vertsNear(rp, snapR)) {
+          if (vid === u || vid === w) continue;
+          const dd = dist(rp, g.pt(vid));
+          if (dd < bestD && g.isBoundaryVertex(vid)) {
+            bestD = dd;
+            snapped = vid;
+          }
+        }
+        if (snapped) {
+          loop.push(snapped);
+          existing.push(snapped);
+        } else {
+          loop.push(rp);
+          existing.push(null);
+        }
+      }
+      const cleanLoop = [];
+      const cleanExisting = [];
+      for (let i = 0; i < loop.length; i++) {
+        const cur = existing[i];
+        const prev = cleanExisting.length ? cleanExisting[cleanExisting.length - 1] : null;
+        const first = cleanExisting.length ? cleanExisting[0] : null;
+        if (cur !== null && (cur === prev || i === loop.length - 1 && cur === first)) continue;
+        if (cur !== null && cleanExisting.filter((x) => x === cur).length > 0) return null;
+        cleanLoop.push(loop[i]);
+        cleanExisting.push(cur);
+      }
+      if (cleanLoop.length < 3) return null;
+      const pts = cleanLoop.map((entry, i) => cleanExisting[i] !== null ? g.pt(cleanExisting[i]) : entry);
+      return { loop: cleanLoop, pts, existing: cleanExisting };
+    };
+    const validateCandidate = (cand, targetL, enforceAspect) => {
+      const { pts, existing } = cand;
+      const n = pts.length;
+      const tol = targetL * 1e-4;
+      if (shoelace(pts) <= 0) return false;
+      if (!polygonIsSimple(pts, tol)) return false;
+      if (enforceAspect && minRectAspect(pts) < 1 / 3 - 1e-9) return false;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const pt of pts) {
+        x0 = Math.min(x0, pt.x);
+        y0 = Math.min(y0, pt.y);
+        x1 = Math.max(x1, pt.x);
+        y1 = Math.max(y1, pt.y);
+      }
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const va = existing[i], vb2 = existing[j];
+        const A = pts[i], B = pts[j];
+        const ex = va && vb2 ? g.edgeBetween(va, vb2) : void 0;
+        if (ex) {
+          if (ex.faces.length !== 1) return false;
+          const tr = g.faceTraversal(ex.faces[0], ex.id);
+          if (!tr) return false;
+          if (tr[0] === va && tr[1] === vb2) return false;
+          continue;
+        }
+        for (const eid of idx.segsNearBBox(Math.min(A.x, B.x), Math.min(A.y, B.y), Math.max(A.x, B.x), Math.max(A.y, B.y), tol * 10)) {
+          const e = g.edges.get(eid);
+          if (!e) continue;
+          const P = g.pt(e.a), Q = g.pt(e.b);
+          const sharedTol = va === e.a || va === e.b || vb2 === e.a || vb2 === e.b ? tol * 10 : tol * 0.01;
+          if (segmentsConflict(A, B, P, Q, sharedTol)) return false;
+        }
+        for (const vid of idx.vertsInBBox(Math.min(A.x, B.x) - tol, Math.min(A.y, B.y) - tol, Math.max(A.x, B.x) + tol, Math.max(A.y, B.y) + tol)) {
+          if (vid === va || vid === vb2) continue;
+          if (distToSegment(g.pt(vid), A, B) < targetL * 0.02) return false;
+        }
+      }
+      for (const vid of idx.vertsInBBox(x0, y0, x1, y1)) {
+        if (existing.includes(vid)) continue;
+        if (pointStrictlyInPolygon(g.pt(vid), pts, tol)) return false;
+      }
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+        const adjacent = j === i + 1 || i === 0 && j === n - 1;
+        if (adjacent) continue;
+        const va = existing[i], vb2 = existing[j];
+        if (!va || !vb2) continue;
+        const e = g.edgeBetween(va, vb2);
+        if (!e) continue;
+        const m = mul(add(g.pt(va), g.pt(vb2)), 0.5);
+        if (pointStrictlyInPolygon(m, pts, tol)) return false;
+      }
+      for (let i = 0; i < n; i++) {
+        if (existing[i] !== null) continue;
+        for (const vid of idx.vertsNear(pts[i], targetL * 0.05)) {
+          if (dist(pts[i], g.pt(vid)) < targetL * 0.05) return false;
+        }
+      }
+      return true;
+    };
+    const insertCandidate = (cand, tier) => {
+      const ids = cand.loop.map(
+        (entry, i) => cand.existing[i] !== null ? cand.existing[i] : addV(entry).id
+      );
+      for (let i = 0; i < ids.length; i++) {
+        const a = ids[i], b = ids[(i + 1) % ids.length];
+        if (!g.edgeBetween(a, b)) addE(a, b);
+      }
+      const f = g.addFace(ids, "#ffffff", tier);
+      const newFrontier = [];
+      for (let i = 0; i < ids.length; i++) {
+        const e = g.edgeBetween(ids[i], ids[(i + 1) % ids.length]);
+        if (e.faces.length === 1) newFrontier.push(e.id);
+      }
+      return newFrontier;
+    };
+    let guard = 0;
+    const maxIters = 4e5;
+    while (queue.length > 0 && guard++ < maxIters) {
+      const eid = queue.shift();
+      const e = g.edges.get(eid);
+      if (!e || e.faces.length !== 1) continue;
+      const info = openSideInfo(e);
+      if (!info) continue;
+      const mid = mul(add(g.pt(info.u), g.pt(info.w)), 0.5);
+      const rMid = Math.hypot(mid.x, mid.y);
+      const targetL = L(rMid);
+      const apothem = targetL / (2 * Math.tan(Math.PI / 5));
+      const cEst = add(mid, mul(info.nOpen, apothem));
+      if (Math.hypot(cEst.x, cEst.y) > RN) continue;
+      const nSampled = sampleSides();
+      let placedFrontier = null;
+      outer:
+        for (let n = nSampled; n >= 3; n--) {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const cand = buildCandidate(info.u, info.w, n, targetL);
+            if (!cand) continue;
+            if (!validateCandidate(cand, targetL, true)) continue;
+            const tier = tierOf(centroid(cand.pts));
+            placedFrontier = insertCandidate(cand, tier);
+            break outer;
+          }
+        }
+      if (placedFrontier) {
+        for (const nf of placedFrontier) queue.push(nf);
+      } else {
+        deferred++;
+      }
+    }
+    let closedGaps = 0;
+    const closureFaceIds = /* @__PURE__ */ new Set();
+    const closeLoop = (loopVerts) => {
+      let ring = [...loopVerts];
+      const triList = [];
+      let stuckGuard = 0;
+      while (ring.length > 3 && stuckGuard++ < 1e4) {
+        let clipped = false;
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[(i - 1 + ring.length) % ring.length];
+          const b = ring[i];
+          const c = ring[(i + 1) % ring.length];
+          const A = g.pt(a), B = g.pt(b), C = g.pt(c);
+          if (cross(sub(B, A), sub(C, B)) <= 1e-12) continue;
+          let ok = true;
+          for (const o of ring) {
+            if (o === a || o === b || o === c) continue;
+            if (pointStrictlyInPolygon(g.pt(o), [A, B, C], 1e-9)) {
+              ok = false;
+              break;
+            }
+          }
+          if (!ok) continue;
+          const exDiag = g.edgeBetween(a, c);
+          if (!exDiag) {
+            let conflict = false;
+            for (const eid2 of idx.segsNearBBox(Math.min(A.x, C.x), Math.min(A.y, C.y), Math.max(A.x, C.x), Math.max(A.y, C.y), 1e-6)) {
+              const e2 = g.edges.get(eid2);
+              if (!e2) continue;
+              const sharedTol = a === e2.a || a === e2.b || c === e2.a || c === e2.b ? 1e-6 : 1e-9;
+              if (segmentsConflict(A, C, g.pt(e2.a), g.pt(e2.b), sharedTol)) {
+                conflict = true;
+                break;
+              }
+            }
+            if (conflict) continue;
+          } else if (exDiag.faces.length >= 2) continue;
+          triList.push([a, b, c]);
+          ring.splice(i, 1);
+          clipped = true;
+          break;
+        }
+        if (!clipped) break;
+      }
+      if (ring.length === 3) {
+        triList.push([ring[0], ring[1], ring[2]]);
+      } else if (ring.length > 3) {
+        for (let i = 1; i < ring.length - 1; i++) triList.push([ring[0], ring[i], ring[i + 1]]);
+      }
+      for (const t of triList) {
+        try {
+          const pts = t.map((v) => g.pt(v));
+          for (let i = 0; i < 3; i++) if (!g.edgeBetween(t[i], t[(i + 1) % 3])) addE(t[i], t[(i + 1) % 3]);
+          const f = g.addFace(t, "#ffffff", tierOf(centroid(pts)));
+          closureFaceIds.add(f.id);
+        } catch {
+        }
+      }
+      closedGaps++;
+    };
+    let closurePasses = 0;
+    while (closurePasses++ < 10) {
+      const loops = g.boundaryLoops();
+      const holes = loops.filter((lp) => shoelace(lp.map((v) => g.pt(v))) > 0);
+      if (holes.length === 0) break;
+      for (const h of holes) closeLoop(h);
+    }
+    const wantsQuads = distTable.some((d) => d.sides >= 4);
+    if (wantsQuads) {
+      for (const fid of [...closureFaceIds]) {
+        const f = g.faces.get(fid);
+        if (!f || f.verts.length !== 3) continue;
+        for (let i = 0; i < 3; i++) {
+          const e = g.edgeBetween(f.verts[i], f.verts[(i + 1) % 3]);
+          if (!e || e.faces.length !== 2) continue;
+          const otherId = e.faces.find((x) => x !== fid);
+          if (!closureFaceIds.has(otherId)) continue;
+          const other = g.faces.get(otherId);
+          if (!other || other.verts.length !== 3) continue;
+          const merged = mergeLoops(g, f.verts, other.verts, e.a, e.b);
+          if (!merged) continue;
+          const mpts = merged.map((v) => g.pt(v));
+          if (!polygonIsSimple(mpts, 1e-9) || minRectAspect(mpts) < 1 / 3) continue;
+          if (rng() > 0.75) continue;
+          g.removeFace(fid);
+          g.removeFace(otherId);
+          e.faces = [];
+          g.removeEdge(e.id);
+          const nf = g.addFace(merged, "#ffffff", tierOf(centroid(mpts)));
+          closureFaceIds.delete(fid);
+          closureFaceIds.delete(otherId);
+          closureFaceIds.add(nf.id);
+          break;
+        }
+      }
+    }
+    const faceIds = [...g.faces.keys()];
+    const blackTarget = Math.floor(faceIds.length * p.blackProbability);
+    const adj = /* @__PURE__ */ new Map();
+    for (const fid of faceIds) adj.set(fid, /* @__PURE__ */ new Set());
+    for (const e of g.edges.values()) {
+      if (e.faces.length === 2) {
+        adj.get(e.faces[0]).add(e.faces[1]);
+        adj.get(e.faces[1]).add(e.faces[0]);
+      }
+    }
+    for (let i = faceIds.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [faceIds[i], faceIds[j]] = [faceIds[j], faceIds[i]];
+    }
+    let blackAchieved = 0;
+    const black = /* @__PURE__ */ new Set();
+    for (const fid of faceIds) {
+      if (blackAchieved >= blackTarget) break;
+      let ok = true;
+      for (const nb of adj.get(fid)) if (black.has(nb)) {
+        ok = false;
+        break;
+      }
+      if (ok) {
+        black.add(fid);
+        g.f(fid).fill = "#000000";
+        blackAchieved++;
+      }
+    }
+    const hist = {};
+    for (const f of g.faces.values()) hist[f.verts.length] = (hist[f.verts.length] ?? 0) + 1;
+    const finalLoops = g.boundaryLoops();
+    return {
+      graph: g,
+      stats: {
+        faceCount: g.faces.size,
+        edgeCount: g.edges.size,
+        vertexCount: g.vertices.size,
+        blackTarget,
+        blackAchieved,
+        sidesHistogram: hist,
+        deferredEdges: deferred,
+        closedGaps,
+        boundaryLoops: finalLoops.length,
+        seed
+      }
+    };
+  }
+  function mergeLoops(g, loop1, loop2, a, b) {
+    const seq = (loop, from, to) => {
+      const i = loop.indexOf(from);
+      if (i < 0) return null;
+      const out = [from];
+      for (let s = 1; s <= loop.length; s++) {
+        const v = loop[(i + s) % loop.length];
+        out.push(v);
+        if (v === to) return out;
+      }
+      return null;
+    };
+    const t1 = adjacentDir(loop1, a, b);
+    if (!t1) return null;
+    const [u, w] = t1;
+    const p1 = seq(loop1, w, u);
+    const p2 = seq(loop2, u, w);
+    if (!p1 || !p2) return null;
+    const merged = [...p1.slice(0, -1), ...p2.slice(0, -1)];
+    if (new Set(merged).size !== merged.length) return null;
+    if (merged.length < 3) return null;
+    return merged;
+  }
+  function adjacentDir(loop, a, b) {
+    for (let i = 0; i < loop.length; i++) {
+      const u = loop[i], w = loop[(i + 1) % loop.length];
+      if (u === a && w === b) return [a, b];
+      if (u === b && w === a) return [b, a];
+    }
+    return null;
+  }
+
+  // src/editor.ts
+  var EditorError = class extends Error {
+  };
+  function addVertexToEdge(g, eid) {
+    const e = g.e(eid);
+    const A = g.pt(e.a), B = g.pt(e.b);
+    const mid = mul(add(A, B), 0.5);
+    const faces = [...e.faces];
+    const affected = faces.map((fid) => g.f(fid));
+    e.faces = [];
+    g.removeEdge(eid);
+    const v = g.addVertex(mid.x, mid.y);
+    const e1 = g.addEdge(e.a, v.id);
+    const e2 = g.addEdge(v.id, e.b);
+    e1.faces = [...faces];
+    e2.faces = [...faces];
+    for (const f of affected) {
+      for (let i = 0; i < f.verts.length; i++) {
+        const u = f.verts[i], w = f.verts[(i + 1) % f.verts.length];
+        if (u === e.a && w === e.b || u === e.b && w === e.a) {
+          f.verts.splice(i + 1, 0, v.id);
+          break;
+        }
+      }
+    }
+    return v.id;
+  }
+  function deleteVertex(g, vid) {
+    const inc = g.incidentEdges(vid);
+    if (inc.length !== 2) {
+      throw new EditorError(
+        "This is a junction vertex shared by 3 or more edges. Delete or merge the surrounding faces first, then remove the vertex."
+      );
+    }
+    const [e1, e2] = inc;
+    const a = e1.a === vid ? e1.b : e1.a;
+    const b = e2.a === vid ? e2.b : e2.a;
+    if (a === b) throw new EditorError("Deleting this vertex would collapse a two-edge loop.");
+    const facesSet = /* @__PURE__ */ new Set([...e1.faces, ...e2.faces]);
+    const faces = [...facesSet];
+    if (e1.faces.length !== e2.faces.length || !e1.faces.every((f) => facesSet.has(f))) {
+      throw new EditorError("Inconsistent topology around this vertex.");
+    }
+    const triangles = faces.filter((fid) => g.f(fid).verts.length === 3);
+    if (triangles.length === 2) {
+      throw new EditorError("Both faces at this vertex are triangles; deleting it would create degenerate topology. Delete one of the triangles first.");
+    }
+    const existing = g.edgeBetween(a, b);
+    if (existing && triangles.length === 0) {
+      throw new EditorError("An edge already exists between the neighboring vertices; merging would create a duplicate edge.");
+    }
+    if (triangles.length === 1) {
+      const triId = triangles[0];
+      const tri = g.f(triId);
+      const third = g.edgeBetween(a, b);
+      if (!third || tri.verts.length !== 3) throw new EditorError("Unexpected topology while removing degenerate face.");
+      const otherId = faces.find((f) => f !== triId) ?? null;
+      g.removeFace(triId);
+      if (otherId) {
+        const other = g.f(otherId);
+        other.verts = other.verts.filter((x) => x !== vid);
+        if (other.verts.length < 3) throw new EditorError("Merging would degenerate the neighboring face.");
+        if (third.faces.length >= 2) throw new EditorError("Unexpected topology: shared edge already saturated.");
+        e1.faces = e1.faces.filter((x) => x !== otherId);
+        e2.faces = e2.faces.filter((x) => x !== otherId);
+        third.faces.push(otherId);
+      }
+      e1.faces = [];
+      e2.faces = [];
+      g.removeEdge(e1.id);
+      g.removeEdge(e2.id);
+      g.removeVertexIfOrphan(vid);
+      return;
+    }
+    for (const fid of faces) {
+      const f = g.f(fid);
+      f.verts = f.verts.filter((x) => x !== vid);
+      if (f.verts.length < 3) throw new EditorError("Deleting this vertex would degenerate a face.");
+    }
+    e1.faces = [];
+    e2.faces = [];
+    g.removeEdge(e1.id);
+    g.removeEdge(e2.id);
+    g.removeVertexIfOrphan(vid);
+    const ne = g.addEdge(a, b);
+    ne.faces = [...faces];
+  }
+  function addEdgeBetween(g, u, w) {
+    if (u === w) throw new EditorError("Pick two different vertices.");
+    if (g.edgeBetween(u, w)) throw new EditorError("An edge already exists between these vertices.");
+    const U = g.pt(u), W = g.pt(w);
+    const facesOf = (vid) => {
+      const s = /* @__PURE__ */ new Set();
+      for (const e of g.incidentEdges(vid)) for (const f of e.faces) s.add(f);
+      return s;
+    };
+    const fu = facesOf(u), common = [...facesOf(w)].filter((f) => fu.has(f));
+    const conflictsWithGraph = () => {
+      for (const e of g.edges.values()) {
+        const shared = u === e.a || u === e.b || w === e.a || w === e.b;
+        const tol = shared ? 1e-6 : 1e-9;
+        if (segmentsConflict(U, W, g.pt(e.a), g.pt(e.b), tol)) return true;
+      }
+      for (const v of g.vertices.values()) {
+        if (v.id === u || v.id === w) continue;
+        if (distFromSeg(v, U, W) < 1e-6) return true;
+      }
+      return false;
+    };
+    for (const fid of common) {
+      const f = g.f(fid);
+      const i = f.verts.indexOf(u), j = f.verts.indexOf(w);
+      if (i < 0 || j < 0) continue;
+      const adjacent = Math.abs(i - j) === 1 || Math.abs(i - j) === f.verts.length - 1;
+      if (adjacent) continue;
+      const poly = g.facePts(fid);
+      const samples = [0.25, 0.5, 0.75].map((t) => ({ x: U.x + (W.x - U.x) * t, y: U.y + (W.y - U.y) * t }));
+      if (!samples.every((s) => pointStrictlyInPolygon(s, poly, 1e-9))) {
+        throw new EditorError("That edge would leave the face's interior (the face is concave there). Choose vertices whose connecting segment stays inside the face.");
+      }
+      if (conflictsWithGraph()) throw new EditorError("That edge would cross existing geometry.");
+      const loop = f.verts;
+      const slice = (from, to) => {
+        const out = [];
+        for (let s = from; ; s = (s + 1) % loop.length) {
+          out.push(loop[s]);
+          if (s === to) break;
+        }
+        return out;
+      };
+      const loop1 = slice(i, j);
+      const loop2 = slice(j, i);
+      g.removeFace(fid);
+      const f1 = g.addFace(loop1, f.fill, f.tier);
+      const f2 = g.addFace(loop2, f.fill, f.tier);
+      void f1;
+      void f2;
+      return { kind: "split" };
+    }
+    if (!g.isBoundaryVertex(u) || !g.isBoundaryVertex(w)) {
+      throw new EditorError("These vertices don't share a face and aren't both on a boundary; there is nowhere valid to put this edge.");
+    }
+    if (conflictsWithGraph()) throw new EditorError("That edge would cross existing geometry.");
+    g.addEdge(u, w);
+    const closed = tryCloseRegion(g, u, w);
+    return { kind: closed ? "closed" : "naked" };
+  }
+  function distFromSeg(p, a, b) {
+    const l2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+    if (l2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+    let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y)));
+  }
+  function tryCloseRegion(g, u, w) {
+    const newEdge = g.edgeBetween(u, w);
+    const prev = /* @__PURE__ */ new Map();
+    prev.set(w, null);
+    const q = [w];
+    while (q.length) {
+      const cur = q.shift();
+      if (cur === u) break;
+      for (const e of g.incidentEdges(cur)) {
+        if (e.id === newEdge.id || e.faces.length >= 2) continue;
+        const nxt = e.a === cur ? e.b : e.a;
+        if (!prev.has(nxt)) {
+          prev.set(nxt, cur);
+          q.push(nxt);
+        }
+      }
+    }
+    if (!prev.has(u)) return false;
+    const path = [];
+    for (let cur = u; cur !== null; cur = prev.get(cur) ?? null) path.push(cur);
+    if (path.length < 3) return false;
+    const pts = path.map((v) => g.pt(v));
+    if (!polygonIsSimple(pts, 1e-9)) return false;
+    for (const v of g.vertices.values()) {
+      if (path.includes(v.id)) continue;
+      if (pointStrictlyInPolygon(v, pts, 1e-9)) return false;
+    }
+    let loop = [...path];
+    if (shoelace(loop.map((v) => g.pt(v))) < 0) loop = loop.reverse();
+    for (let i = 0; i < loop.length; i++) {
+      const a = loop[i], b = loop[(i + 1) % loop.length];
+      const e = g.edgeBetween(a, b);
+      if (!e || e.faces.length >= 2) return false;
+      if (e.faces.length === 1) {
+        const tr = g.faceTraversal(e.faces[0], e.id);
+        if (tr && tr[0] === a && tr[1] === b) return false;
+      }
+    }
+    try {
+      g.addFace(loop, "#ffffff", 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function deleteEdge(g, eid) {
+    const e = g.e(eid);
+    if (e.faces.length === 2) {
+      const [fa, fb] = e.faces;
+      const F1 = g.f(fa), F2 = g.f(fb);
+      const shared = [];
+      for (const e2 of g.edges.values()) {
+        if (e2.faces.length === 2 && e2.faces.includes(fa) && e2.faces.includes(fb)) shared.push(e2.id);
+      }
+      if (shared.length === 1) {
+        const merged2 = mergeLoops(g, F1.verts, F2.verts, e.a, e.b);
+        if (!merged2) throw new EditorError("These faces touch at an extra vertex; merging would pinch the polygon. Not supported.");
+        const fill2 = F1.fill;
+        const tier2 = F1.tier;
+        g.removeFace(fa);
+        g.removeFace(fb);
+        e.faces = [];
+        g.removeEdge(eid);
+        g.addFace(merged2, fill2, tier2);
+        return { kind: "merged" };
+      }
+      const chainVertPairs = shared.map((id) => {
+        const s2 = g.e(id);
+        return [s2.a, s2.b];
+      });
+      const isShared = (a, b) => chainVertPairs.some(([x, y]) => x === a && y === b || x === b && y === a);
+      const n = F1.verts.length;
+      const marks = [];
+      for (let i = 0; i < n; i++) marks.push(isShared(F1.verts[i], F1.verts[(i + 1) % n]));
+      const runs = countCyclicRuns(marks);
+      if (runs !== 1) {
+        throw new EditorError("These faces share non-contiguous edges; merging them would create a face with a hole. Delete the in-between geometry first.");
+      }
+      if (marks.every(Boolean)) throw new EditorError("These faces share their entire boundary; deletion is not meaningful here.");
+      let start = 0;
+      while (!(marks[start] && !marks[(start - 1 + n) % n])) start = (start + 1) % n;
+      let end = start;
+      while (marks[(end + 1) % n]) end = (end + 1) % n;
+      const s = F1.verts[start];
+      const t = F1.verts[(end + 1) % n];
+      const interior = [];
+      for (let i = (start + 1) % n; i !== (end + 1) % n; i = (i + 1) % n) interior.push(F1.verts[i]);
+      const p1 = walk(F1.verts, t, s);
+      const p2 = walk(F2.verts, s, t);
+      if (!p1 || !p2) throw new EditorError("Unexpected topology while merging.");
+      const merged = [...p1.slice(0, -1), ...p2.slice(0, -1)];
+      if (new Set(merged).size !== merged.length || merged.length < 3) {
+        throw new EditorError("These faces touch at an extra vertex; merging would pinch the polygon. Not supported.");
+      }
+      const fill = F1.fill;
+      const tier = F1.tier;
+      g.removeFace(fa);
+      g.removeFace(fb);
+      for (const sid of shared) {
+        const se = g.e(sid);
+        se.faces = [];
+        g.removeEdge(sid);
+      }
+      for (const iv of interior) g.removeVertexIfOrphan(iv);
+      g.addFace(merged, fill, tier);
+      return { kind: "merged" };
+    }
+    if (e.faces.length === 1) {
+      deleteFace(g, e.faces[0]);
+      return { kind: "faceDeleted" };
+    }
+    g.removeEdge(eid);
+    g.removeVertexIfOrphan(e.a);
+    g.removeVertexIfOrphan(e.b);
+    return { kind: "removed" };
+  }
+  function walk(loop, from, to) {
+    const i = loop.indexOf(from);
+    if (i < 0 || loop.indexOf(to) < 0) return null;
+    const out = [from];
+    for (let s = 1; s <= loop.length; s++) {
+      const v = loop[(i + s) % loop.length];
+      out.push(v);
+      if (v === to) return out;
+    }
+    return null;
+  }
+  function countCyclicRuns(marks) {
+    let runs = 0;
+    const n = marks.length;
+    for (let i = 0; i < n; i++) {
+      if (marks[i] && !marks[(i - 1 + n) % n]) runs++;
+    }
+    return runs;
+  }
+  function deleteFace(g, fid) {
+    const f = g.f(fid);
+    const loopEdges = [];
+    for (let i = 0; i < f.verts.length; i++) {
+      const e = g.edgeBetween(f.verts[i], f.verts[(i + 1) % f.verts.length]);
+      if (e) loopEdges.push(e.id);
+    }
+    g.removeFace(fid);
+    for (const eid of loopEdges) {
+      const e = g.edges.get(eid);
+      if (e && e.faces.length === 0) g.removeEdge(eid);
+    }
+    for (const vid of f.verts) g.removeVertexIfOrphan(vid);
+  }
+  function paintFace(g, fid, fill) {
+    g.f(fid).fill = fill;
+  }
+
+  // src/exporter.ts
+  var r4 = (v) => {
+    const n = Number(v.toFixed(4));
+    return Object.is(n, -0) ? "0" : String(n);
+  };
+  function exportSVG(g, strokeWidth) {
+    if (g.vertices.size === 0) {
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>`;
+    }
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const v of g.vertices.values()) {
+      if (v.x < x0) x0 = v.x;
+      if (v.x > x1) x1 = v.x;
+      if (v.y < y0) y0 = v.y;
+      if (v.y > y1) y1 = v.y;
+    }
+    const pad = strokeWidth;
+    const vb2 = `${r4(x0 - pad)} ${r4(y0 - pad)} ${r4(x1 - x0 + 2 * pad)} ${r4(y1 - y0 + 2 * pad)}`;
+    const byTier = /* @__PURE__ */ new Map();
+    for (const f of g.faces.values()) {
+      if (!byTier.has(f.tier)) byTier.set(f.tier, []);
+      let pts = f.verts.map((v) => g.pt(v));
+      if (shoelace(pts) < 0) pts = pts.reverse();
+      const d = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${r4(p.x)} ${r4(p.y)}`).join(" ") + " Z";
+      byTier.get(f.tier).push(
+        `<path d="${d}" fill="${f.fill}" stroke="#000000" stroke-width="${r4(strokeWidth)}" stroke-linejoin="round"/>`
+      );
+    }
+    const tierGroups = [...byTier.keys()].sort((a, b) => a - b).map(
+      (t) => `  <g id="tier-${t}">
+    ${byTier.get(t).join("\n    ")}
+  </g>`
+    );
+    const naked = [];
+    for (const e of g.edges.values()) {
+      if (e.faces.length === 0) {
+        const a = g.pt(e.a), b = g.pt(e.b);
+        naked.push(
+          `<line x1="${r4(a.x)}" y1="${r4(a.y)}" x2="${r4(b.x)}" y2="${r4(b.y)}" stroke="#000000" stroke-width="${r4(strokeWidth)}" stroke-linecap="round"/>`
+        );
+      }
+    }
+    const nakedGroup = naked.length ? `  <g id="naked-edges">
+    ${naked.join("\n    ")}
+  </g>` : "";
+    return [
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb2}">`,
+      ...tierGroups,
+      ...nakedGroup ? [nakedGroup] : [],
+      `</svg>`
+    ].join("\n");
+  }
+
+  // src/main.ts
+  var $ = (id) => document.getElementById(id);
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var graph = null;
+  var stats = null;
+  var lastParams = null;
+  var dirty = false;
+  var undoStack = [];
+  var redoStack = [];
+  var UNDO_DEPTH = 100;
+  var sel = null;
+  var secondVertex = null;
+  var paintMode = false;
+  var vb = { x: -300, y: -300, w: 600, h: 600 };
+  var svg = $("canvas");
+  var facesG = document.createElementNS(SVGNS, "g");
+  var nakedG = document.createElementNS(SVGNS, "g");
+  var hitsG = document.createElementNS(SVGNS, "g");
+  var selG = document.createElementNS(SVGNS, "g");
+  var vertsG = document.createElementNS(SVGNS, "g");
+  svg.append(facesG, nakedG, hitsG, selG, vertsG);
+  var faceEls = /* @__PURE__ */ new Map();
+  var edgeHitEls = /* @__PURE__ */ new Map();
+  var vertEls = /* @__PURE__ */ new Map();
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove("show"), 3400);
+  }
+  function clientToDoc(cx, cy) {
+    const r = svg.getBoundingClientRect();
+    return {
+      x: vb.x + (cx - r.left) / r.width * vb.w,
+      y: vb.y + (cy - r.top) / r.height * vb.h
+    };
+  }
+  function unitsPerPx() {
+    const r = svg.getBoundingClientRect();
+    return vb.w / r.width;
+  }
+  function applyVB() {
+    svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    updateVertexRadii();
+    $("sb-zoom").textContent = graph ? `zoom ${(100 / unitsPerPx()).toFixed(0)}%` : "";
+  }
+  function fitView() {
+    if (!graph || graph.vertices.size === 0) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const v of graph.vertices.values()) {
+      x0 = Math.min(x0, v.x);
+      x1 = Math.max(x1, v.x);
+      y0 = Math.min(y0, v.y);
+      y1 = Math.max(y1, v.y);
+    }
+    const m = Math.max(x1 - x0, y1 - y0) * 0.06;
+    const r = svg.getBoundingClientRect();
+    const aspect = r.width / Math.max(1, r.height);
+    let w = x1 - x0 + 2 * m, h = y1 - y0 + 2 * m;
+    if (w / h < aspect) w = h * aspect;
+    else h = w / aspect;
+    vb = { x: (x0 + x1) / 2 - w / 2, y: (y0 + y1) / 2 - h / 2, w, h };
+    applyVB();
+  }
+  function pathD(f) {
+    const g = graph;
+    return f.verts.map((v, i) => {
+      const p = g.pt(v);
+      return `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`;
+    }).join(" ") + " Z";
+  }
+  function updateVertexRadii() {
+    const r = 3.2 * unitsPerPx();
+    const rs = String(r);
+    const sw = String(0.8 * unitsPerPx());
+    for (const c of vertEls.values()) {
+      c.setAttribute("r", rs);
+      c.setAttribute("stroke-width", sw);
+    }
+    for (const el of selG.children) {
+      if (el instanceof SVGCircleElement) el.setAttribute("r", String(4.5 * unitsPerPx()));
+    }
+  }
+  function render() {
+    facesG.innerHTML = "";
+    nakedG.innerHTML = "";
+    hitsG.innerHTML = "";
+    vertsG.innerHTML = "";
+    faceEls.clear();
+    edgeHitEls.clear();
+    vertEls.clear();
+    $("empty-state").style.display = graph ? "none" : "flex";
+    if (!graph) {
+      renderSel();
+      updateToolbar();
+      return;
+    }
+    const g = graph;
+    const sw = lastParams?.strokeWidth ?? 1.5;
+    for (const f of g.faces.values()) {
+      const p = document.createElementNS(SVGNS, "path");
+      p.setAttribute("d", pathD(f));
+      p.setAttribute("fill", f.fill);
+      p.setAttribute("stroke", "#000000");
+      p.setAttribute("stroke-width", String(sw));
+      p.setAttribute("stroke-linejoin", "round");
+      p.classList.add("face");
+      p.dataset.id = f.id;
+      facesG.appendChild(p);
+      faceEls.set(f.id, p);
+    }
+    for (const e of g.edges.values()) {
+      const a = g.pt(e.a), b = g.pt(e.b);
+      if (e.faces.length === 0) {
+        const l = document.createElementNS(SVGNS, "line");
+        l.setAttribute("x1", String(a.x));
+        l.setAttribute("y1", String(a.y));
+        l.setAttribute("x2", String(b.x));
+        l.setAttribute("y2", String(b.y));
+        l.setAttribute("stroke-width", String(sw));
+        l.setAttribute("stroke-linecap", "round");
+        l.classList.add("naked-edge");
+        nakedG.appendChild(l);
+      }
+      const h = document.createElementNS(SVGNS, "line");
+      h.setAttribute("x1", String(a.x));
+      h.setAttribute("y1", String(a.y));
+      h.setAttribute("x2", String(b.x));
+      h.setAttribute("y2", String(b.y));
+      h.classList.add("edge-hit");
+      h.dataset.id = e.id;
+      hitsG.appendChild(h);
+      edgeHitEls.set(e.id, h);
+    }
+    for (const v of g.vertices.values()) {
+      const c = document.createElementNS(SVGNS, "circle");
+      c.setAttribute("cx", String(v.x));
+      c.setAttribute("cy", String(v.y));
+      c.classList.add("vert");
+      c.dataset.id = v.id;
+      vertsG.appendChild(c);
+      vertEls.set(v.id, c);
+    }
+    updateVertexRadii();
+    renderSel();
+    updateToolbar();
+  }
+  function renderSel() {
+    selG.innerHTML = "";
+    if (!graph) {
+      $("sb-sel").textContent = "\u2014";
+      return;
+    }
+    const g = graph;
+    const put = (el) => selG.appendChild(el);
+    let label = "nothing selected";
+    if (sel) {
+      try {
+        if (sel.type === "face") {
+          const f = g.f(sel.id);
+          const p = document.createElementNS(SVGNS, "path");
+          p.setAttribute("d", pathD(f));
+          p.classList.add("sel-face-outline");
+          put(p);
+          label = `face \xB7 ${f.verts.length} sides \xB7 tier ${f.tier} \xB7 ${f.fill}`;
+        } else if (sel.type === "edge") {
+          const e = g.e(sel.id);
+          const a = g.pt(e.a), b = g.pt(e.b);
+          const l = document.createElementNS(SVGNS, "line");
+          l.setAttribute("x1", String(a.x));
+          l.setAttribute("y1", String(a.y));
+          l.setAttribute("x2", String(b.x));
+          l.setAttribute("y2", String(b.y));
+          l.classList.add("sel-edge");
+          put(l);
+          label = `edge \xB7 ${e.faces.length === 2 ? "shared" : e.faces.length === 1 ? "boundary" : "naked"}`;
+        } else {
+          const v = g.v(sel.id);
+          const c = document.createElementNS(SVGNS, "circle");
+          c.setAttribute("cx", String(v.x));
+          c.setAttribute("cy", String(v.y));
+          c.setAttribute("r", String(4.5 * unitsPerPx()));
+          c.classList.add("sel-vert");
+          put(c);
+          label = `vertex \xB7 degree ${g.degree(v.id)}`;
+        }
+      } catch {
+        sel = null;
+      }
+    }
+    if (secondVertex && graph.vertices.has(secondVertex)) {
+      const v = g.v(secondVertex);
+      const c = document.createElementNS(SVGNS, "circle");
+      c.setAttribute("cx", String(v.x));
+      c.setAttribute("cy", String(v.y));
+      c.setAttribute("r", String(4.5 * unitsPerPx()));
+      c.classList.add("sel-vert", "second");
+      put(c);
+      label += "  +  second vertex";
+    }
+    $("sb-sel").textContent = label;
+    $("sb-hint").textContent = sel?.type === "vertex" && !secondVertex ? "shift-click another vertex to prepare an edge \xB7 drag to move" : sel?.type === "vertex" && secondVertex ? "press Add edge to connect" : sel?.type === "edge" ? "Add vertex splits at the midpoint" : "";
+  }
+  function updateToolbar() {
+    $("bt-export").disabled = !graph;
+    $("bt-paint").disabled = !graph;
+    $("bt-undo").disabled = undoStack.length === 0;
+    $("bt-redo").disabled = redoStack.length === 0;
+    $("bt-addvert").disabled = !(sel?.type === "edge");
+    $("bt-addedge").disabled = !(sel?.type === "vertex" && secondVertex);
+    $("bt-delete").disabled = !sel;
+    $("bt-paint").classList.toggle("active", paintMode);
+    positionPicker();
+  }
+  function pushUndo(snap) {
+    undoStack.push(snap);
+    if (undoStack.length > UNDO_DEPTH) undoStack.shift();
+    redoStack.length = 0;
+  }
+  function doOp(fn, opts = {}) {
+    if (!graph) return;
+    const snap = graph.toJSON();
+    try {
+      fn();
+      pushUndo(snap);
+      dirty = true;
+      if (!opts.keepSel) {
+        sel = null;
+        secondVertex = null;
+      }
+      render();
+    } catch (err) {
+      if (err instanceof EditorError) toast(err.message);
+      else {
+        toast("Operation failed \u2014 see console.");
+        console.error(err);
+      }
+    }
+  }
+  function undo() {
+    if (!graph || undoStack.length === 0) return;
+    redoStack.push(graph.toJSON());
+    graph = Graph.fromJSON(undoStack.pop());
+    sel = null;
+    secondVertex = null;
+    render();
+  }
+  function redo() {
+    if (!graph || redoStack.length === 0) return;
+    undoStack.push(graph.toJSON());
+    graph = Graph.fromJSON(redoStack.pop());
+    sel = null;
+    secondVertex = null;
+    render();
+  }
+  var distRows = [];
+  function addDistRow(sides, prob) {
+    const wrap = document.createElement("div");
+    wrap.className = "drow";
+    const sl = document.createElement("span");
+    sl.className = "dlabel";
+    sl.textContent = "sides";
+    const si = document.createElement("input");
+    si.type = "number";
+    si.min = "3";
+    si.step = "1";
+    si.value = String(sides);
+    const pl = document.createElement("span");
+    pl.className = "dlabel";
+    pl.textContent = "prob";
+    const pi = document.createElement("input");
+    pi.type = "number";
+    pi.min = "0";
+    pi.max = "1";
+    pi.step = "0.01";
+    pi.value = String(prob);
+    const rm = document.createElement("button");
+    rm.textContent = "\xD7";
+    rm.title = "Remove row";
+    const row = { sides: si, prob: pi };
+    rm.addEventListener("click", () => {
+      distRows.splice(distRows.indexOf(row), 1);
+      wrap.remove();
+      validateParams();
+    });
+    for (const inp of [si, pi]) inp.addEventListener("input", validateParams);
+    wrap.append(sl, si, pl, pi, rm);
+    $("dist-rows").appendChild(wrap);
+    distRows.push(row);
+  }
+  function readParams() {
+    const errors = [];
+    const num = (id, name, min, max = Infinity, integer = false) => {
+      const el = $(id);
+      const v = parseFloat(el.value);
+      const ok = isFinite(v) && v >= min && v <= max && (!integer || Math.round(v) === v);
+      el.classList.toggle("bad", !ok);
+      if (!ok) errors.push(name);
+      return v;
+    };
+    const tiers = num("p-tiers", "tiers", 1, 12, true);
+    const width = num("p-width", "tier width", 1);
+    const scale = num("p-scale", "tier scale", 0.1, 10);
+    const density = num("p-density", "density", 1e-4, 10);
+    const ratio = num("p-ratio", "density ratio", 1.01, 100);
+    const irr = num("p-irr", "irregularity", 0, 1);
+    const black = num("p-black", "black probability", 0, 1);
+    const stroke = num("p-stroke", "stroke width", 0.01, 100);
+    const distribution = [];
+    let sum = 0;
+    for (const r of distRows) {
+      const s = parseInt(r.sides.value, 10);
+      const p = parseFloat(r.prob.value);
+      const sOk = isFinite(s) && s >= 3 && s <= 12;
+      const pOk = isFinite(p) && p >= 0 && p <= 1;
+      r.sides.classList.toggle("bad", !sOk);
+      r.prob.classList.toggle("bad", !pOk);
+      if (!sOk || !pOk) errors.push("distribution row");
+      else {
+        distribution.push({ sides: s, probability: p });
+        sum += p;
+      }
+    }
+    const sumEl = $("dist-sum");
+    const sumOk = Math.abs(sum - 1) < 5e-3 && distribution.length > 0;
+    sumEl.textContent = `\u03A3 probability = ${sum.toFixed(2)} ${sumOk ? "\u2713" : "(must equal 1.00)"}`;
+    sumEl.className = sumOk ? "ok" : "bad";
+    if (!sumOk) errors.push("distribution sum");
+    if (distribution.length === 0) errors.push("empty distribution");
+    const seedRaw = $("p-seed").value.trim();
+    let seed = void 0;
+    if (seedRaw !== "") {
+      const s = parseInt(seedRaw, 10);
+      if (!isFinite(s)) errors.push("seed");
+      else seed = s;
+    }
+    if (errors.length === 0) {
+      const R = tierRadii({ tiers, tierWidth: width, tierScale: scale });
+      const RN = R[R.length - 1];
+      const est = Math.PI * RN * RN * density * density * 0.6;
+      if (est > 2e4) errors.push("too dense: parameters imply >20k polygons; reduce density or radius");
+    }
+    if (errors.length > 0) return { params: null, errors };
+    return {
+      params: {
+        tiers,
+        tierWidth: width,
+        tierScale: scale,
+        density,
+        densityRatio: ratio,
+        irregularity: irr,
+        distribution,
+        blackProbability: black,
+        strokeWidth: stroke,
+        seed
+      },
+      errors
+    };
+  }
+  function validateParams() {
+    const { params, errors } = readParams();
+    const bt = $("bt-generate");
+    bt.disabled = !params;
+    bt.title = errors.length ? "Fix: " + errors.join(", ") : "";
+    return params;
+  }
+  function renderStats() {
+    const sec = $("stats-sec");
+    if (!stats || !lastParams) {
+      sec.style.display = "none";
+      return;
+    }
+    sec.style.display = "";
+    const s = stats;
+    const total = Math.max(1, s.faceCount);
+    const target = new Map(lastParams.distribution.map((d) => [d.sides, d.probability]));
+    const allSides = [.../* @__PURE__ */ new Set([...Object.keys(s.sidesHistogram).map(Number), ...target.keys()])].sort((a, b) => a - b);
+    const bars = allSides.map((k) => {
+      const t = (target.get(k) ?? 0) * 100;
+      const a = (s.sidesHistogram[k] ?? 0) / total * 100;
+      return `<div class="bar-row"><span class="k">${k}-gon</span><span class="bar-pair">
+      <span class="bar target"><i style="width:${t.toFixed(1)}%"></i></span>
+      <span class="bar actual"><i style="width:${a.toFixed(1)}%"></i></span>
+    </span></div>`;
+    }).join("");
+    const short = s.blackAchieved < s.blackTarget;
+    $("stats").innerHTML = `
+    <div class="srow"><span>faces / edges / verts</span><b>${s.faceCount} / ${s.edgeCount} / ${s.vertexCount}</b></div>
+    <div class="srow"><span>black fill</span><b>${s.blackAchieved} of ${s.blackTarget} target${short ? " (short)" : ""}</b></div>
+    <div class="srow"><span>gaps closed / deferred</span><b>${s.closedGaps} / ${s.deferredEdges}</b></div>
+    <div class="srow"><span>seed</span><b>${s.seed}</b></div>
+    <div class="bars">${bars}</div>
+    <div class="legend"><span><span class="sw" style="background:var(--ink-faint)"></span>target</span>
+    <span><span class="sw" style="background:var(--accent)"></span>achieved</span></div>
+    ${short ? `<p class="hint" style="margin-top:8px">Black target not reachable without adjacent black faces; constraint kept, shortfall accepted.</p>` : ""}`;
+  }
+  function runGenerate() {
+    const params = validateParams();
+    if (!params) return;
+    if (graph && dirty && !confirm("Regenerating replaces the current tessellation and its edits. Continue?")) return;
+    $("tb-status").textContent = "generating\u2026";
+    setTimeout(() => {
+      try {
+        const t0 = performance.now();
+        const out = generate(params);
+        graph = out.graph;
+        stats = out.stats;
+        lastParams = params;
+        dirty = false;
+        undoStack.length = 0;
+        redoStack.length = 0;
+        sel = null;
+        secondVertex = null;
+        paintMode = false;
+        renderStats();
+        render();
+        fitView();
+        $("tb-status").textContent = `${stats.faceCount} faces \xB7 ${(performance.now() - t0).toFixed(0)} ms \xB7 seed ${stats.seed}`;
+      } catch (err) {
+        console.error(err);
+        $("tb-status").textContent = "";
+        toast("Generation failed \u2014 try different parameters. " + err.message);
+      }
+    }, 20);
+  }
+  function runDelete() {
+    if (!graph || !sel) return;
+    const g = graph;
+    if (sel.type === "vertex") {
+      doOp(() => deleteVertex(g, sel.id));
+    } else if (sel.type === "edge") {
+      const e = g.e(sel.id);
+      if (e.faces.length === 1 && !confirm("This is a boundary edge; deleting it deletes its face. Continue?")) return;
+      doOp(() => deleteEdge(g, sel.id));
+    } else {
+      doOp(() => deleteFace(g, sel.id));
+    }
+  }
+  function runAddVertex() {
+    if (!graph || sel?.type !== "edge") return;
+    const g = graph;
+    const eid = sel.id;
+    doOp(() => {
+      const vid = addVertexToEdge(g, eid);
+      sel = { type: "vertex", id: vid };
+    }, { keepSel: true });
+    renderSel();
+  }
+  function runAddEdge() {
+    if (!graph || sel?.type !== "vertex" || !secondVertex) return;
+    const g = graph, u = sel.id, w = secondVertex;
+    doOp(() => {
+      const r = addEdgeBetween(g, u, w);
+      if (r.kind === "naked") toast("Naked edge added \u2014 it borders no face yet. Close a loop of open edges to form one.");
+      if (r.kind === "closed") toast("Edge added; enclosed region became a new face.");
+    });
+  }
+  function runExport() {
+    if (!graph) return;
+    const s = exportSVG(graph, lastParams?.strokeWidth ?? 1.5);
+    const blob = new Blob([s], { type: "image/svg+xml" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "tessellation.svg";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4e3);
+  }
+  function positionPicker() {
+    const pk = $("picker");
+    const open = paintMode && sel?.type === "face" && !!graph;
+    pk.classList.toggle("open", open);
+    if (open && graph && sel) {
+      $("picker-color").value = normalizeHex(graph.f(sel.id).fill);
+      pk.style.right = "16px";
+      pk.style.top = "14px";
+    }
+  }
+  function normalizeHex(c) {
+    return /^#[0-9a-fA-F]{6}$/.test(c) ? c : "#ffffff";
+  }
+  function applyPaint(color) {
+    if (!graph || sel?.type !== "face") return;
+    const g = graph, fid = sel.id;
+    doOp(() => paintFace(g, fid, color), { keepSel: true });
+  }
+  var drag = null;
+  svg.addEventListener("pointerdown", (ev) => {
+    hideCtx();
+    if (ev.button === 2) return;
+    const t = ev.target;
+    const vid = t instanceof SVGCircleElement ? t.dataset.id : void 0;
+    if (ev.button === 0 && vid && graph) {
+      drag = { kind: "vertex", startClient: [ev.clientX, ev.clientY], vid, snap: graph.toJSON(), moved: false, target: t };
+      svg.setPointerCapture(ev.pointerId);
+    } else if (ev.button === 1 || t === svg || t.parentNode === svg) {
+      drag = { kind: "pan", startClient: [ev.clientX, ev.clientY], startVB: { ...vb }, moved: false };
+      svg.setPointerCapture(ev.pointerId);
+      svg.classList.add("panning");
+    } else {
+      drag = { kind: "maybe", startClient: [ev.clientX, ev.clientY], moved: false, target: t };
+    }
+  });
+  svg.addEventListener("pointermove", (ev) => {
+    if (!drag) return;
+    const dx = ev.clientX - drag.startClient[0], dy = ev.clientY - drag.startClient[1];
+    if (Math.hypot(dx, dy) > 3) drag.moved = true;
+    if (drag.kind === "pan" && drag.startVB) {
+      const upp = drag.startVB.w / svg.getBoundingClientRect().width;
+      vb = { ...drag.startVB, x: drag.startVB.x - dx * upp, y: drag.startVB.y - dy * upp };
+      applyVB();
+    } else if (drag.kind === "vertex" && drag.moved && graph && drag.vid) {
+      const p = clientToDoc(ev.clientX, ev.clientY);
+      const v = graph.v(drag.vid);
+      v.x = p.x;
+      v.y = p.y;
+      updateAfterVertexMove(drag.vid);
+    }
+  });
+  svg.addEventListener("pointerup", (ev) => {
+    svg.classList.remove("panning");
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    if (d.kind === "vertex" && d.moved && d.snap) {
+      pushUndo(d.snap);
+      dirty = true;
+      render();
+      if (d.vid) {
+        sel = { type: "vertex", id: d.vid };
+        secondVertex = null;
+        renderSel();
+        updateToolbar();
+      }
+      return;
+    }
+    if (d.moved) return;
+    const t = d.target ?? ev.target;
+    handleClickSelect(t, ev);
+  });
+  function handleClickSelect(t, ev) {
+    if (!graph) return;
+    const id = t.dataset?.id;
+    if (t instanceof SVGCircleElement && id) {
+      if (ev.shiftKey && sel?.type === "vertex" && sel.id !== id) {
+        secondVertex = id;
+      } else {
+        sel = { type: "vertex", id };
+        secondVertex = null;
+      }
+    } else if (t instanceof SVGLineElement && id) {
+      sel = { type: "edge", id };
+      secondVertex = null;
+    } else if (t instanceof SVGPathElement && id) {
+      sel = { type: "face", id };
+      secondVertex = null;
+    } else {
+      sel = null;
+      secondVertex = null;
+    }
+    renderSel();
+    updateToolbar();
+  }
+  function updateAfterVertexMove(vid) {
+    const g = graph;
+    const v = g.v(vid);
+    const c = vertEls.get(vid);
+    if (c) {
+      c.setAttribute("cx", String(v.x));
+      c.setAttribute("cy", String(v.y));
+    }
+    for (const e of g.incidentEdges(vid)) {
+      const h = edgeHitEls.get(e.id);
+      if (h) {
+        const a = g.pt(e.a), b = g.pt(e.b);
+        h.setAttribute("x1", String(a.x));
+        h.setAttribute("y1", String(a.y));
+        h.setAttribute("x2", String(b.x));
+        h.setAttribute("y2", String(b.y));
+      }
+      for (const fid of e.faces) {
+        const fe = faceEls.get(fid);
+        if (fe) fe.setAttribute("d", pathD(g.f(fid)));
+      }
+    }
+    nakedG.querySelectorAll("line").forEach((l, i) => void l);
+    let iN = 0;
+    for (const e of g.edges.values()) {
+      if (e.faces.length !== 0) continue;
+      const l = nakedG.children[iN++];
+      if (l) {
+        const a = g.pt(e.a), b = g.pt(e.b);
+        l.setAttribute("x1", String(a.x));
+        l.setAttribute("y1", String(a.y));
+        l.setAttribute("x2", String(b.x));
+        l.setAttribute("y2", String(b.y));
+      }
+    }
+    renderSel();
+  }
+  svg.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    if (!graph) return;
+    const factor = Math.exp(ev.deltaY * 16e-4);
+    const p = clientToDoc(ev.clientX, ev.clientY);
+    const w = Math.max(1e-3, Math.min(vb.w * factor, 1e7));
+    const scale = w / vb.w;
+    vb = {
+      x: p.x - (p.x - vb.x) * scale,
+      y: p.y - (p.y - vb.y) * scale,
+      w: vb.w * scale,
+      h: vb.h * scale
+    };
+    applyVB();
+  }, { passive: false });
+  var ctx = $("ctx");
+  function hideCtx() {
+    ctx.classList.remove("open");
+  }
+  document.addEventListener("click", (e) => {
+    if (!ctx.contains(e.target)) hideCtx();
+  });
+  svg.addEventListener("contextmenu", (ev) => {
+    ev.preventDefault();
+    if (!graph) return;
+    const t = ev.target;
+    handleClickSelect(t, ev);
+    const items = [];
+    if (sel?.type === "vertex") {
+      items.push({ label: "Delete vertex", danger: true, fn: runDelete });
+    } else if (sel?.type === "edge") {
+      items.push({ label: "Add vertex at midpoint", fn: runAddVertex });
+      items.push({ label: "Delete edge", danger: true, fn: runDelete });
+    } else if (sel?.type === "face") {
+      items.push({ label: "Paint\u2026", fn: () => {
+        paintMode = true;
+        updateToolbar();
+      } });
+      items.push({
+        label: "Toggle black fill",
+        fn: () => {
+          if (!graph || sel?.type !== "face") return;
+          const cur = graph.f(sel.id).fill;
+          applyPaint(cur === "#000000" ? "#ffffff" : "#000000");
+        }
+      });
+      items.push({ label: "Delete face", danger: true, fn: runDelete });
+    } else if (sel?.type === "vertex" && secondVertex) {
+      items.push({ label: "Add edge", fn: runAddEdge });
+    }
+    if (items.length === 0) return;
+    ctx.innerHTML = "";
+    for (const it of items) {
+      const d = document.createElement("div");
+      d.className = "mi" + (it.danger ? " danger" : "");
+      d.textContent = it.label;
+      d.addEventListener("click", () => {
+        hideCtx();
+        it.fn();
+      });
+      ctx.appendChild(d);
+    }
+    ctx.style.left = Math.min(ev.clientX, window.innerWidth - 190) + "px";
+    ctx.style.top = Math.min(ev.clientY, window.innerHeight - items.length * 34 - 16) + "px";
+    ctx.classList.add("open");
+  });
+  document.addEventListener("keydown", (ev) => {
+    const inField = ev.target.tagName === "INPUT";
+    const mod = ev.ctrlKey || ev.metaKey;
+    if (mod && ev.key.toLowerCase() === "z" && !ev.shiftKey) {
+      if (!inField) {
+        ev.preventDefault();
+        undo();
+      }
+    } else if (mod && ev.key.toLowerCase() === "y" || mod && ev.shiftKey && ev.key.toLowerCase() === "z") {
+      if (!inField) {
+        ev.preventDefault();
+        redo();
+      }
+    } else if ((ev.key === "Delete" || ev.key === "Backspace") && !inField && sel) {
+      ev.preventDefault();
+      runDelete();
+    } else if (ev.key === "Escape") {
+      sel = null;
+      secondVertex = null;
+      paintMode = false;
+      hideCtx();
+      renderSel();
+      updateToolbar();
+    }
+  });
+  $("bt-generate").addEventListener("click", runGenerate);
+  $("bt-undo").addEventListener("click", undo);
+  $("bt-redo").addEventListener("click", redo);
+  $("bt-export").addEventListener("click", runExport);
+  $("bt-delete").addEventListener("click", runDelete);
+  $("bt-addvert").addEventListener("click", runAddVertex);
+  $("bt-addedge").addEventListener("click", runAddEdge);
+  $("bt-paint").addEventListener("click", () => {
+    paintMode = !paintMode;
+    updateToolbar();
+  });
+  $("bt-panel").addEventListener("click", () => $("panel").classList.toggle("collapsed"));
+  $("dist-add").addEventListener("click", () => {
+    addDistRow(6, 0);
+    validateParams();
+  });
+  $("picker-color").addEventListener("change", (e) => applyPaint(e.target.value));
+  document.querySelectorAll("#picker .swatches button").forEach((b) => b.addEventListener("click", () => applyPaint(b.dataset.c)));
+  for (const id of ["p-tiers", "p-width", "p-scale", "p-density", "p-ratio", "p-irr", "p-black", "p-stroke", "p-seed"]) {
+    $(id).addEventListener("input", validateParams);
+  }
+  window.addEventListener("resize", applyVB);
+  addDistRow(3, 0.45);
+  addDistRow(4, 0.3);
+  addDistRow(5, 0.25);
+  validateParams();
+  applyVB();
+  render();
+})();
+</script>
+</body>
+</html>

@@ -228,6 +228,8 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
         <p class="hint">Edge length at the origin ≈ 1 / density.</p>
         <div class="row"><label for="p-ratio">Initial / final ratio</label><input id="p-ratio" type="number" min="1.01" step="0.1" value="3"></div>
         <div class="row"><label for="p-irr">Irregularity (0–1)</label><input id="p-irr" type="number" min="0" max="1" step="0.05" value="0.45"></div>
+        <div class="row"><label for="p-elong">Radial elongation</label><input id="p-elong" type="number" min="0.1" max="10" step="0.05" value="1"></div>
+        <p class="hint">Final modifier (0.1–10): cells stretch along their radius line by this factor at every radius — diamonds become shards. 1 = off; &lt;1 flattens into arcs.</p>
       </div>
       <div class="sec">
         <h2>Polygon mix</h2>
@@ -706,6 +708,37 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
       return [...ids];
     }
   };
+  function mergeLoops(_g, loop1, loop2, a, b) {
+    const seq = (loop, from, to) => {
+      const i = loop.indexOf(from);
+      if (i < 0) return null;
+      const out = [from];
+      for (let s = 1; s <= loop.length; s++) {
+        const v = loop[(i + s) % loop.length];
+        out.push(v);
+        if (v === to) return out;
+      }
+      return null;
+    };
+    const t1 = adjacentDir(loop1, a, b);
+    if (!t1) return null;
+    const [u, w] = t1;
+    const p1 = seq(loop1, w, u);
+    const p2 = seq(loop2, u, w);
+    if (!p1 || !p2) return null;
+    const merged = [...p1.slice(0, -1), ...p2.slice(0, -1)];
+    if (new Set(merged).size !== merged.length) return null;
+    if (merged.length < 3) return null;
+    return merged;
+  }
+  function adjacentDir(loop, a, b) {
+    for (let i = 0; i < loop.length; i++) {
+      const u = loop[i], w = loop[(i + 1) % loop.length];
+      if (u === a && w === b) return [a, b];
+      if (u === b && w === a) return [b, a];
+    }
+    return null;
+  }
 
   // src/generate.ts
   function tierRadii(p) {
@@ -725,7 +758,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
       for (let i = 0; i < p.tiers; i++) if (r < R[i + 1]) return i;
       return p.tiers - 1;
     };
-    const g = new Graph();
+    let g = new Graph();
     const idx = new SpatialIndex(L(RN / 2));
     const addV = (pt) => {
       const v = g.addVertex(pt.x, pt.y);
@@ -1055,6 +1088,37 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
         }
       }
     }
+    const elong = Math.min(10, Math.max(0.1, p.radialElongation ?? 1));
+    let elongationConflicts = 0;
+    let elongationCollapsed = 0;
+    let elongationRemoved = 0;
+    if (elong !== 1) {
+      for (const v of g.vertices.values()) {
+        const r = Math.hypot(v.x, v.y);
+        if (r < 1e-12) continue;
+        const s = radialElongationScale(RN, elong, r);
+        v.x *= s;
+        v.y *= s;
+      }
+      const snap = g.toJSON();
+      const beforeCross = countGeometricConflicts(g);
+      const beforeFlips = countNegativeFaces(g);
+      repairFlippedFaces(g);
+      repairCrossingConflicts(g);
+      repairFlippedFaces(g);
+      if (countGeometricConflicts(g) + countNegativeFaces(g) > beforeCross + beforeFlips) {
+        g = Graph.fromJSON(snap);
+      }
+      for (const f of [...g.faces.values()]) {
+        if (shoelace(f.verts.map((v) => g.pt(v))) > 0) continue;
+        if (collapseNegativeFace(g, f.id)) elongationCollapsed++;
+        else {
+          elongationRemoved++;
+          elongationCollapsed++;
+        }
+      }
+      elongationConflicts = countGeometricConflicts(g);
+    }
     const faceIds = [...g.faces.keys()];
     const blackTarget = Math.floor(faceIds.length * p.blackProbability);
     const adj = /* @__PURE__ */ new Map();
@@ -1098,41 +1162,277 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
         sidesHistogram: hist,
         deferredEdges: deferred,
         closedGaps,
+        elongationConflicts,
+        elongationCollapsed,
+        elongationRemoved,
         boundaryLoops: finalLoops.length,
         seed
       }
     };
   }
-  function mergeLoops(g, loop1, loop2, a, b) {
-    const seq = (loop, from, to) => {
-      const i = loop.indexOf(from);
-      if (i < 0) return null;
-      const out = [from];
-      for (let s = 1; s <= loop.length; s++) {
-        const v = loop[(i + s) % loop.length];
-        out.push(v);
-        if (v === to) return out;
-      }
-      return null;
-    };
-    const t1 = adjacentDir(loop1, a, b);
-    if (!t1) return null;
-    const [u, w] = t1;
-    const p1 = seq(loop1, w, u);
-    const p2 = seq(loop2, u, w);
-    if (!p1 || !p2) return null;
-    const merged = [...p1.slice(0, -1), ...p2.slice(0, -1)];
-    if (new Set(merged).size !== merged.length) return null;
-    if (merged.length < 3) return null;
-    return merged;
+  function radialElongationScale(RN, E, r) {
+    return Math.min(6, Math.max(0.05, Math.pow(r / RN, E - 1)));
   }
-  function adjacentDir(loop, a, b) {
-    for (let i = 0; i < loop.length; i++) {
-      const u = loop[i], w = loop[(i + 1) % loop.length];
-      if (u === a && w === b) return [a, b];
-      if (u === b && w === a) return [b, a];
+  function countGeometricConflicts(g) {
+    const es = [...g.edges.values()].map((e) => {
+      const a = g.pt(e.a), b = g.pt(e.b);
+      return {
+        e,
+        a,
+        b,
+        x0: Math.min(a.x, b.x),
+        x1: Math.max(a.x, b.x),
+        y0: Math.min(a.y, b.y),
+        y1: Math.max(a.y, b.y)
+      };
+    });
+    let n = 0;
+    for (let i = 0; i < es.length && n < 200; i++) {
+      for (let j = i + 1; j < es.length && n < 200; j++) {
+        const A = es[i], B = es[j];
+        if (A.x1 < B.x0 || B.x1 < A.x0 || A.y1 < B.y0 || B.y1 < A.y0) continue;
+        const shares = A.e.a === B.e.a || A.e.a === B.e.b || A.e.b === B.e.a || A.e.b === B.e.b;
+        if (segmentsConflict(A.a, A.b, B.a, B.b, shares ? 1e-6 : 1e-9)) n++;
+      }
     }
-    return null;
+    return n;
+  }
+  function repairFlippedFaces(g) {
+    let remaining = 0;
+    for (const f of [...g.faces.values()]) {
+      const area = () => shoelace(f.verts.map((v) => g.pt(v)));
+      if (area() > 0) continue;
+      if (!tryRepairFace(g, f.id)) remaining++;
+    }
+    return remaining;
+  }
+  function tryRepairFace(g, fid) {
+    const f = g.f(fid);
+    const n = f.verts.length;
+    let ref = 0, nref = 0;
+    const neighborFaces = /* @__PURE__ */ new Set();
+    for (let i = 0; i < n; i++) {
+      const e = g.edgeBetween(f.verts[i], f.verts[(i + 1) % n]);
+      if (!e) continue;
+      for (const ofid of e.faces) {
+        if (ofid === fid || neighborFaces.has(ofid)) continue;
+        neighborFaces.add(ofid);
+        const a = shoelace(g.f(ofid).verts.map((v) => g.pt(v)));
+        if (a > 0) {
+          ref += a;
+          nref++;
+        }
+      }
+    }
+    const target = Math.max(1e-6, 0.15 * (nref ? ref / nref : 1));
+    const cand = [];
+    const pts = f.verts.map((v) => g.pt(v));
+    for (let i = 0; i < n; i++) {
+      const p = pts[i];
+      const r = Math.hypot(p.x, p.y);
+      if (r < 1e-9) continue;
+      const u = { x: p.x / r, y: p.y / r };
+      const prev = pts[(i - 1 + n) % n], next = pts[(i + 1) % n];
+      const grad = { x: next.y - prev.y, y: prev.x - next.x };
+      const slope = grad.x * u.x + grad.y * u.y;
+      if (Math.abs(slope) > 1e-12) cand.push({ i, slope });
+    }
+    cand.sort((a, b) => Math.abs(b.slope) - Math.abs(a.slope));
+    const attempt = (vid, dir, slope) => {
+      const v = g.v(vid);
+      const p0 = { x: v.x, y: v.y };
+      const S = shoelace(f.verts.map((x) => g.pt(x)));
+      const t = (target - S) / slope;
+      let cap = Infinity;
+      for (const e of g.incidentEdges(vid)) {
+        const o = e.a === vid ? e.b : e.a;
+        cap = Math.min(cap, 0.6 * Math.hypot(g.v(o).x - p0.x, g.v(o).y - p0.y));
+      }
+      if (!isFinite(t) || Math.abs(t) > cap) return false;
+      v.x = p0.x + dir.x * t;
+      v.y = p0.y + dir.y * t;
+      if (localGeometryOk(g, vid)) return true;
+      v.x = p0.x;
+      v.y = p0.y;
+      return false;
+    };
+    for (const { i, slope } of cand) {
+      const vid = f.verts[i];
+      const p0 = g.pt(vid);
+      const r = Math.hypot(p0.x, p0.y);
+      if (attempt(vid, { x: p0.x / r, y: p0.y / r }, slope)) return true;
+    }
+    for (const { i } of cand) {
+      const vid = f.verts[i];
+      const pts2 = f.verts.map((x) => g.pt(x));
+      const prev = pts2[(i - 1 + n) % n], next = pts2[(i + 1) % n];
+      const grad = { x: next.y - prev.y, y: prev.x - next.x };
+      const m = Math.hypot(grad.x, grad.y);
+      if (m < 1e-12) continue;
+      if (attempt(vid, { x: grad.x / m, y: grad.y / m }, m)) return true;
+    }
+    return false;
+  }
+  function localGeometryOk(g, vid) {
+    const incident = g.incidentEdges(vid);
+    const faceIds = /* @__PURE__ */ new Set();
+    for (const e of incident) for (const fid of e.faces) faceIds.add(fid);
+    const localEdges = /* @__PURE__ */ new Set();
+    for (const fid of faceIds) {
+      const f = g.f(fid);
+      if (shoelace(f.verts.map((v) => g.pt(v))) <= 0) return false;
+      if (!polygonIsSimple(f.verts.map((v) => g.pt(v)), 1e-9)) return false;
+      for (let i = 0; i < f.verts.length; i++) {
+        const e = g.edgeBetween(f.verts[i], f.verts[(i + 1) % f.verts.length]);
+        if (e) localEdges.add(e.id);
+      }
+    }
+    for (const e of incident) {
+      const A = g.pt(e.a), B = g.pt(e.b);
+      for (const oid of localEdges) {
+        if (oid === e.id) continue;
+        const o = g.e(oid);
+        const shares = e.a === o.a || e.a === o.b || e.b === o.a || e.b === o.b;
+        if (segmentsConflict(A, B, g.pt(o.a), g.pt(o.b), shares ? 1e-6 : 1e-9)) return false;
+      }
+    }
+    return true;
+  }
+  function collectConflictPairs(g, cap) {
+    const es = [...g.edges.values()].map((e) => {
+      const a = g.pt(e.a), b = g.pt(e.b);
+      return { e, a, b, x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) };
+    });
+    const out = [];
+    for (let i = 0; i < es.length && out.length < cap; i++) {
+      for (let j = i + 1; j < es.length && out.length < cap; j++) {
+        const A = es[i], B = es[j];
+        if (A.x1 < B.x0 || B.x1 < A.x0 || A.y1 < B.y0 || B.y1 < A.y0) continue;
+        const shares = A.e.a === B.e.a || A.e.a === B.e.b || A.e.b === B.e.a || A.e.b === B.e.b;
+        if (segmentsConflict(A.a, A.b, B.a, B.b, shares ? 1e-6 : 1e-9)) out.push([A.e, B.e]);
+      }
+    }
+    return out;
+  }
+  function repairCrossingConflicts(g, maxPasses = 7) {
+    for (let pass = 0; pass < maxPasses; pass++) {
+      const pairs = collectConflictPairs(g, 50);
+      if (pairs.length === 0) return;
+      let progress = false;
+      for (const [e1, e2] of pairs) {
+        const stillBad = () => {
+          const A2 = g.pt(e1.a), B2 = g.pt(e1.b), C2 = g.pt(e2.a), D2 = g.pt(e2.b);
+          const shares = e1.a === e2.a || e1.a === e2.b || e1.b === e2.a || e1.b === e2.b;
+          return segmentsConflict(A2, B2, C2, D2, shares ? 1e-6 : 1e-9);
+        };
+        if (!stillBad()) continue;
+        const A = g.pt(e1.a), B = g.pt(e1.b), C = g.pt(e2.a), D = g.pt(e2.b);
+        const len1 = dist(A, B), len2 = dist(C, D);
+        const outer = len1 >= len2 ? e1 : e2;
+        const inner = outer === e1 ? e2 : e1;
+        const oa = g.pt(outer.a), ob = g.pt(outer.b);
+        const Lo = Math.max(len1, len2);
+        const rO = Math.max(1e-6, Math.hypot((oa.x + ob.x) / 2, (oa.y + ob.y) / 2));
+        const step = Lo * Lo / (8 * rO) * 1.3 * (pass + 1) + 1e-3;
+        if (tryRadialNudge(g, [inner.a, inner.b], -step)) {
+          progress = true;
+          if (stillBad()) {
+            if (tryRadialNudge(g, [outer.a, outer.b], step)) progress = true;
+          }
+        } else if (tryRadialNudge(g, [outer.a, outer.b], step)) {
+          progress = true;
+        } else {
+          for (const [vid, sgn] of [[inner.a, -1], [inner.b, -1], [outer.a, 1], [outer.b, 1]]) {
+            if (tryRadialNudge(g, [vid], sgn * step)) {
+              progress = true;
+              if (!stillBad()) break;
+            }
+          }
+        }
+      }
+      if (!progress) return;
+    }
+  }
+  function tryRadialNudge(g, vids, step) {
+    const orig = vids.map((id) => ({ id, x: g.v(id).x, y: g.v(id).y }));
+    const revert = () => {
+      for (const o of orig) {
+        const v = g.v(o.id);
+        v.x = o.x;
+        v.y = o.y;
+      }
+    };
+    for (const id of vids) {
+      const v = g.v(id);
+      const r = Math.hypot(v.x, v.y);
+      if (r < 1e-9 || r + step <= 0) {
+        revert();
+        return false;
+      }
+      const sc = (r + step) / r;
+      v.x *= sc;
+      v.y *= sc;
+    }
+    for (const id of vids) {
+      if (!localGeometryOk(g, id)) {
+        revert();
+        return false;
+      }
+    }
+    return true;
+  }
+  function countNegativeFaces(g) {
+    let n = 0;
+    for (const f of g.faces.values()) {
+      if (shoelace(f.verts.map((v) => g.pt(v))) <= 0) n++;
+    }
+    return n;
+  }
+  function collapseNegativeFace(g, fid) {
+    const f = g.f(fid);
+    const n = f.verts.length;
+    const byNeighbor = /* @__PURE__ */ new Map();
+    for (let i = 0; i < n; i++) {
+      const e = g.edgeBetween(f.verts[i], f.verts[(i + 1) % n]);
+      if (!e) continue;
+      const other = e.faces.find((x) => x !== fid);
+      if (!other) continue;
+      if (!byNeighbor.has(other)) byNeighbor.set(other, []);
+      byNeighbor.get(other).push(e.id);
+    }
+    const neighbors = [...byNeighbor.entries()].sort((a, b) => {
+      const av = Math.abs(shoelace(g.f(a[0]).verts.map((v) => g.pt(v))));
+      const bv = Math.abs(shoelace(g.f(b[0]).verts.map((v) => g.pt(v))));
+      return bv - av;
+    });
+    for (const [nid, sharedIds] of neighbors) {
+      if (sharedIds.length !== 1) continue;
+      const e = g.e(sharedIds[0]);
+      const merged = mergeLoops(g, f.verts, g.f(nid).verts, e.a, e.b);
+      if (!merged) continue;
+      const pts = merged.map((v) => g.pt(v));
+      if (shoelace(pts) <= 0) continue;
+      if (!polygonIsSimple(pts, 1e-9)) continue;
+      const keep = g.f(nid);
+      const fill = keep.fill, tier = keep.tier;
+      g.removeFace(fid);
+      g.removeFace(nid);
+      g.removeEdge(e.id);
+      g.addFace(merged, fill, tier);
+      return true;
+    }
+    const loopEdges = [];
+    for (let i = 0; i < n; i++) {
+      const e = g.edgeBetween(f.verts[i], f.verts[(i + 1) % n]);
+      if (e) loopEdges.push(e.id);
+    }
+    g.removeFace(fid);
+    for (const eid of loopEdges) {
+      const e = g.edges.get(eid);
+      if (e && e.faces.length === 0) g.removeEdge(eid);
+    }
+    for (const vid of f.verts) g.removeVertexIfOrphan(vid);
+    return false;
   }
 
   // src/editor.ts
@@ -1803,6 +2103,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     const ratio = num("p-ratio", "density ratio", 1.01, 100);
     const irr = num("p-irr", "irregularity", 0, 1);
     const black = num("p-black", "black probability", 0, 1);
+    const elong = num("p-elong", "radial elongation", 0.1, 10);
     const stroke = num("p-stroke", "stroke width", 0.01, 100);
     const distribution = [];
     let sum = 0;
@@ -1850,6 +2151,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
         distribution,
         blackProbability: black,
         strokeWidth: stroke,
+        radialElongation: elong,
         seed
       },
       errors
@@ -1890,7 +2192,9 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     <div class="bars">${bars}</div>
     <div class="legend"><span><span class="sw" style="background:var(--ink-faint)"></span>target</span>
     <span><span class="sw" style="background:var(--accent)"></span>achieved</span></div>
-    ${short ? `<p class="hint" style="margin-top:8px">Black target not reachable without adjacent black faces; constraint kept, shortfall accepted.</p>` : ""}`;
+    ${short ? `<p class="hint" style="margin-top:8px">Black target not reachable without adjacent black faces; constraint kept, shortfall accepted.</p>` : ""}
+    ${s.elongationConflicts > 0 ? `<p class="hint" style="margin-top:8px;color:var(--danger)">Radial elongation left ${s.elongationConflicts} edge pair${s.elongationConflicts > 1 ? "s" : ""} crossing. Exports fine; a different seed or gentler factor avoids it.</p>` : ""}
+    ${s.elongationCollapsed > 0 ? `<p class="hint" style="margin-top:8px">${s.elongationCollapsed} degenerate sliver${s.elongationCollapsed > 1 ? "s were" : " was"} merged into neighbors during elongation${s.elongationRemoved > 0 ? ` (${s.elongationRemoved} removed, leaving tiny holes)` : ""}.</p>` : ""}`;
   }
   function runGenerate() {
     const params = validateParams();
@@ -1914,6 +2218,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
         render();
         fitView();
         $("tb-status").textContent = `${stats.faceCount} faces \xB7 ${(performance.now() - t0).toFixed(0)} ms \xB7 seed ${stats.seed}`;
+        if (stats.elongationConflicts > 0) toast(`Elongation left ${stats.elongationConflicts} edge crossing${stats.elongationConflicts > 1 ? "s" : ""} \u2014 a different seed or gentler factor avoids this.`);
       } catch (err) {
         console.error(err);
         $("tb-status").textContent = "";
@@ -2204,7 +2509,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
   });
   $("picker-color").addEventListener("change", (e) => applyPaint(e.target.value));
   document.querySelectorAll("#picker .swatches button").forEach((b) => b.addEventListener("click", () => applyPaint(b.dataset.c)));
-  for (const id of ["p-tiers", "p-width", "p-scale", "p-density", "p-ratio", "p-irr", "p-black", "p-stroke", "p-seed"]) {
+  for (const id of ["p-tiers", "p-width", "p-scale", "p-density", "p-ratio", "p-irr", "p-elong", "p-black", "p-stroke", "p-seed"]) {
     $(id).addEventListener("input", validateParams);
   }
   window.addEventListener("resize", applyVB);

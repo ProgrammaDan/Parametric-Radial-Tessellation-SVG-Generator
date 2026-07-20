@@ -7,7 +7,7 @@ Tessela, the low hanging fruit of a name that is all too perfect a fit a for a C
 Tessela is a single-file browser app that generates radial tessellations, patterns of polygons that fill a disc outward from a center point and allows you edit them by hand before exporting to SVG.
 ## Getting started
 
-Open `tessellation-editor.html` in any modern browser, or click on the link above to use without downloading. Everything runs locally and nothing is saved between sessions, so **export before you close the tab**.
+Open `index.html` in any modern browser, or click on the link above to use without downloading. Everything runs locally and nothing is saved between sessions, so **export before you close the tab**.
 
 Click **Generate** to produce your first pattern, then adjust parameters and regenerate until you like the result.
 

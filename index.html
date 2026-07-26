@@ -95,6 +95,18 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
   border: 1px solid var(--line); border-radius: 3px;
   padding: 4px 6px; text-align: right;
 }
+.row input[type="checkbox"] {
+  appearance: none; width: 34px; height: 18px; flex: 0 0 auto; cursor: pointer;
+  background: var(--chrome); border: 1px solid var(--line); border-radius: 9px;
+  position: relative; transition: background .12s, border-color .12s;
+}
+.row input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--ink-dim); transition: transform .12s, background .12s;
+}
+.row input[type="checkbox"]:checked { background: var(--accent-soft); border-color: var(--accent); }
+.row input[type="checkbox"]:checked::after { transform: translateX(16px); background: var(--accent); }
 .row input:focus { outline: none; border-color: var(--accent); }
 .row input.bad { border-color: var(--danger); }
 .hint { font-size: 11px; color: var(--ink-faint); margin: -2px 0 8px; }
@@ -150,13 +162,31 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
   position: absolute; display: none; z-index: 30;
   background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
   padding: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.45);
-  width: 168px;
+  width: 186px;
 }
 #picker.open { display: block; }
 #picker h3 { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 8px; }
-#picker input[type="color"] { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 4px; background: var(--chrome); padding: 2px; cursor: pointer; }
-#picker .swatches { display: flex; gap: 6px; margin-top: 8px; }
-#picker .swatches button { width: 30px; height: 24px; padding: 0; border-radius: 3px; }
+#picker .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+#picker .swatches button {
+  width: 28px; height: 24px; padding: 0; border-radius: 3px;
+  border: 1px solid var(--line); cursor: pointer; position: relative;
+}
+#picker .swatches button.active {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--accent);
+}
+#picker .pk-custom {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-dim); cursor: pointer;
+}
+#picker .pk-custom input[type="color"] {
+  flex: 1; height: 26px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--chrome); padding: 2px; cursor: pointer;
+}
+#picker .pk-hint {
+  margin-top: 8px; font-size: 11px; line-height: 1.35; color: var(--ink-dim);
+}
+#picker .pk-hint.armed { color: #b7c8f7; }
 
 /* context menu */
 #ctx {
@@ -170,6 +200,21 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
 #ctx .mi { padding: 6px 10px; border-radius: 4px; cursor: pointer; color: var(--ink); }
 #ctx .mi:hover { background: var(--accent-soft); color: #b7c8f7; }
 #ctx .mi.danger:hover { background: rgba(207,90,78,.14); color: #e89a91; }
+
+/* confirmation dialog (in-app: browsers can suppress window.confirm) */
+#modal {
+  position: fixed; inset: 0; z-index: 60; display: none;
+  align-items: center; justify-content: center;
+  background: rgba(10,10,12,.55);
+}
+#modal.open { display: flex; }
+#modal .mbox {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 18px 18px 14px; width: min(380px, calc(100% - 40px));
+  box-shadow: 0 18px 50px rgba(0,0,0,.5);
+}
+#modal p { color: var(--ink); font-size: 13px; line-height: 1.45; margin-bottom: 16px; }
+#modal .mbtns { display: flex; gap: 8px; justify-content: flex-end; }
 
 /* toast */
 #toast {
@@ -187,8 +232,12 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
 .face { cursor: pointer; }
 .edge-hit { stroke: transparent; fill: none; cursor: pointer; vector-effect: non-scaling-stroke; stroke-width: 9px; }
 .naked-edge { stroke: #000; fill: none; pointer-events: none; }
+/* white seam cancelling the black stroke where two black faces meet */
+.black-seam { stroke: #fff; fill: none; pointer-events: none; }
 .vert { fill: #8a887f; stroke: #55534d; cursor: pointer; transition: fill .08s; }
 .vert:hover { fill: var(--accent); }
+/* preview mode: canvas shows exactly what the SVG export contains */
+#canvas.hide-verts .vert, #canvas.hide-verts .sel-vert { display: none; }
 .sel-face-outline { fill: rgba(36,86,230,.13); stroke: var(--accent); vector-effect: non-scaling-stroke; stroke-width: 2px; pointer-events: none; }
 .sel-edge { stroke: var(--accent); vector-effect: non-scaling-stroke; stroke-width: 3px; fill: none; pointer-events: none; stroke-linecap: round; }
 .sel-vert { fill: var(--accent); stroke: #fff; pointer-events: none; }
@@ -208,9 +257,11 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     <button id="bt-addvert" disabled>Add vertex</button>
     <button id="bt-addedge" disabled>Add edge</button>
     <button id="bt-delete" disabled>Delete</button>
-    <button id="bt-paint" disabled>Paint</button>
+    <button id="bt-invert" disabled title="Swap black and white fills">Invert</button>
+        <button id="bt-paint" disabled>Paint</button>
     <span class="tb-sep"></span>
-    <button id="bt-export" disabled>Export SVG</button>
+    <button id="bt-verts" disabled title="Show or hide vertex handles (they are never exported)">Vertices</button>
+        <button id="bt-export" disabled>Export SVG</button>
     <button id="bt-panel" title="Show or hide settings">Settings</button>
     <span id="tb-status"></span>
   </div>
@@ -241,6 +292,10 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
       <div class="sec">
         <h2>Fill &amp; stroke</h2>
         <div class="row"><label for="p-black">Black fill probability</label><input id="p-black" type="number" min="0" max="1" step="0.05" value="0.28"></div>
+        <div class="row"><label for="p-adjblack">Allow black shapes to touch</label><input id="p-adjblack" type="checkbox"></div>
+        <p class="hint">Off: no two black shapes share an edge, so the target is a ceiling. On: the target is met exactly and black areas pool into clusters.</p>
+        <div class="row"><label for="p-seams">Separate touching black shapes</label><input id="p-seams" type="checkbox" checked></div>
+        <p class="hint">Draws the edge between two black shapes in white so each stays distinct. Turn off to let them merge into blobs. Applies immediately — no need to regenerate.</p>
         <div class="row"><label for="p-stroke">Stroke width</label><input id="p-stroke" type="number" min="0.1" step="0.1" value="1.5"></div>
         <div class="row"><label for="p-seed">Seed (blank = random)</label><input id="p-seed" type="text" value="" placeholder="—"></div>
       </div>
@@ -255,16 +310,23 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
       <div id="statusbar"><span id="sb-sel" class="sel">—</span><span id="sb-zoom"></span><span id="sb-hint"></span></div>
       <div id="picker">
         <h3>Fill</h3>
-        <input type="color" id="picker-color" value="#ffffff">
-        <div class="swatches">
-          <button data-c="#000000" style="background:#000"></button>
-          <button data-c="#ffffff" style="background:#fff"></button>
-          <button data-c="#cf5a4e" style="background:#cf5a4e"></button>
-          <button data-c="#2456e6" style="background:#2456e6"></button>
-          <button data-c="#d9a13c" style="background:#d9a13c"></button>
-        </div>
+        <div class="swatches" id="picker-swatches"></div>
+        <label class="pk-custom" for="picker-color">
+          <span>Custom</span>
+          <input type="color" id="picker-color" value="#ffffff">
+        </label>
+        <p class="pk-hint" id="picker-hint"></p>
       </div>
       <div id="toast"></div>
+      <div id="modal">
+        <div class="mbox" role="dialog" aria-modal="true" aria-labelledby="modal-msg">
+          <p id="modal-msg"></p>
+          <div class="mbtns">
+            <button id="modal-cancel">Cancel</button>
+            <button id="modal-ok" class="primary">Continue</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -739,6 +801,14 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     }
     return null;
   }
+  function blackSeamEdges(g) {
+    const out = [];
+    for (const e of g.edges.values()) {
+      if (e.faces.length !== 2) continue;
+      if (g.f(e.faces[0]).fill.toLowerCase() === "#000000" && g.f(e.faces[1]).fill.toLowerCase() === "#000000") out.push(e);
+    }
+    return out;
+  }
 
   // src/generate.ts
   function tierRadii(p) {
@@ -1122,11 +1192,13 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     const faceIds = [...g.faces.keys()];
     const blackTarget = Math.floor(faceIds.length * p.blackProbability);
     const adj = /* @__PURE__ */ new Map();
-    for (const fid of faceIds) adj.set(fid, /* @__PURE__ */ new Set());
-    for (const e of g.edges.values()) {
-      if (e.faces.length === 2) {
-        adj.get(e.faces[0]).add(e.faces[1]);
-        adj.get(e.faces[1]).add(e.faces[0]);
+    if (!p.allowAdjacentBlack) {
+      for (const fid of faceIds) adj.set(fid, /* @__PURE__ */ new Set());
+      for (const e of g.edges.values()) {
+        if (e.faces.length === 2) {
+          adj.get(e.faces[0]).add(e.faces[1]);
+          adj.get(e.faces[1]).add(e.faces[0]);
+        }
       }
     }
     for (let i = faceIds.length - 1; i > 0; i--) {
@@ -1138,9 +1210,11 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     for (const fid of faceIds) {
       if (blackAchieved >= blackTarget) break;
       let ok = true;
-      for (const nb of adj.get(fid)) if (black.has(nb)) {
-        ok = false;
-        break;
+      if (!p.allowAdjacentBlack) {
+        for (const nb of adj.get(fid)) if (black.has(nb)) {
+          ok = false;
+          break;
+        }
       }
       if (ok) {
         black.add(fid);
@@ -1162,6 +1236,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
         sidesHistogram: hist,
         deferredEdges: deferred,
         closedGaps,
+        adjacentBlackAllowed: !!p.allowAdjacentBlack,
         elongationConflicts,
         elongationCollapsed,
         elongationRemoved,
@@ -1741,13 +1816,28 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
   function paintFace(g, fid, fill) {
     g.f(fid).fill = fill;
   }
+  function invertBlackWhite(g) {
+    let n = 0;
+    for (const f of g.faces.values()) {
+      const c = f.fill.toLowerCase();
+      if (c === "#000000") {
+        f.fill = "#ffffff";
+        n++;
+      } else if (c === "#ffffff") {
+        f.fill = "#000000";
+        n++;
+      }
+    }
+    return n;
+  }
 
   // src/exporter.ts
   var r4 = (v) => {
     const n = Number(v.toFixed(4));
     return Object.is(n, -0) ? "0" : String(n);
   };
-  function exportSVG(g, strokeWidth) {
+  function exportSVG(g, strokeWidth, opts = {}) {
+    const withSeams = opts.blackSeams !== false;
     if (g.vertices.size === 0) {
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>`;
     }
@@ -1787,10 +1877,18 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     const nakedGroup = naked.length ? `  <g id="naked-edges">
     ${naked.join("\n    ")}
   </g>` : "";
+    const seams = (withSeams ? blackSeamEdges(g) : []).map((e) => {
+      const a = g.pt(e.a), b = g.pt(e.b);
+      return `<line x1="${r4(a.x)}" y1="${r4(a.y)}" x2="${r4(b.x)}" y2="${r4(b.y)}" stroke="#ffffff" stroke-width="${r4(strokeWidth)}" stroke-linecap="round"/>`;
+    });
+    const seamGroup = seams.length ? `  <g id="black-seams">
+    ${seams.join("\n    ")}
+  </g>` : "";
     return [
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb2}">`,
       ...tierGroups,
       ...nakedGroup ? [nakedGroup] : [],
+      ...seamGroup ? [seamGroup] : [],
       `</svg>`
     ].join("\n");
   }
@@ -1808,15 +1906,19 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
   var sel = null;
   var secondVertex = null;
   var paintMode = false;
+  var showBlackSeams = true;
+  var showVertices = true;
   var vb = { x: -300, y: -300, w: 600, h: 600 };
   var svg = $("canvas");
   var facesG = document.createElementNS(SVGNS, "g");
+  var seamG = document.createElementNS(SVGNS, "g");
   var nakedG = document.createElementNS(SVGNS, "g");
   var hitsG = document.createElementNS(SVGNS, "g");
   var selG = document.createElementNS(SVGNS, "g");
   var vertsG = document.createElementNS(SVGNS, "g");
-  svg.append(facesG, nakedG, hitsG, selG, vertsG);
+  svg.append(facesG, seamG, nakedG, hitsG, selG, vertsG);
   var faceEls = /* @__PURE__ */ new Map();
+  var seamEls = /* @__PURE__ */ new Map();
   var edgeHitEls = /* @__PURE__ */ new Map();
   var vertEls = /* @__PURE__ */ new Map();
   function toast(msg) {
@@ -1825,6 +1927,28 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     t.classList.add("show");
     clearTimeout(toast._t);
     toast._t = setTimeout(() => t.classList.remove("show"), 3400);
+  }
+  var modalResolve = null;
+  function askConfirm(msg, okLabel = "Continue") {
+    if (modalResolve) closeModal(false);
+    const m = $("modal");
+    $("modal-msg").textContent = msg;
+    $("modal-ok").textContent = okLabel;
+    m.classList.add("open");
+    $("modal-ok").focus();
+    return new Promise((resolve) => {
+      modalResolve = resolve;
+    });
+  }
+  function closeModal(ok) {
+    if (!modalResolve) return;
+    const r = modalResolve;
+    modalResolve = null;
+    $("modal").classList.remove("open");
+    r(ok);
+  }
+  function modalOpen() {
+    return modalResolve !== null;
   }
   function clientToDoc(cx, cy) {
     const r = svg.getBoundingClientRect();
@@ -1881,10 +2005,12 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
   }
   function render() {
     facesG.innerHTML = "";
+    seamG.innerHTML = "";
     nakedG.innerHTML = "";
     hitsG.innerHTML = "";
     vertsG.innerHTML = "";
     faceEls.clear();
+    seamEls.clear();
     edgeHitEls.clear();
     vertEls.clear();
     $("empty-state").style.display = graph ? "none" : "flex";
@@ -1906,6 +2032,20 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
       p.dataset.id = f.id;
       facesG.appendChild(p);
       faceEls.set(f.id, p);
+    }
+    for (const e of showBlackSeams ? blackSeamEdges(g) : []) {
+      const a = g.pt(e.a), b = g.pt(e.b);
+      const l = document.createElementNS(SVGNS, "line");
+      l.setAttribute("x1", String(a.x));
+      l.setAttribute("y1", String(a.y));
+      l.setAttribute("x2", String(b.x));
+      l.setAttribute("y2", String(b.y));
+      l.setAttribute("stroke-width", String(sw));
+      l.setAttribute("stroke-linecap", "round");
+      l.classList.add("black-seam");
+      l.dataset.id = e.id;
+      seamG.appendChild(l);
+      seamEls.set(e.id, l);
     }
     for (const e of g.edges.values()) {
       const a = g.pt(e.a), b = g.pt(e.b);
@@ -1997,11 +2137,14 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
       label += "  +  second vertex";
     }
     $("sb-sel").textContent = label;
-    $("sb-hint").textContent = sel?.type === "vertex" && !secondVertex ? "shift-click another vertex to prepare an edge \xB7 drag to move" : sel?.type === "vertex" && secondVertex ? "press Add edge to connect" : sel?.type === "edge" ? "Add vertex splits at the midpoint" : "";
+    $("sb-hint").textContent = paintMode && activeColor ? `painting ${activeColor} \xB7 click shapes to fill \xB7 Escape to stop` : paintMode ? "pick a color in the panel, then click shapes" : sel?.type === "vertex" && !secondVertex ? "shift-click another vertex to prepare an edge \xB7 drag to move" : sel?.type === "vertex" && secondVertex ? "press Add edge to connect" : sel?.type === "edge" ? "Add vertex splits at the midpoint" : "";
   }
   function updateToolbar() {
     $("bt-export").disabled = !graph;
     $("bt-paint").disabled = !graph;
+    $("bt-invert").disabled = !graph;
+    $("bt-verts").disabled = !graph;
+    $("bt-verts").classList.toggle("active", showVertices);
     $("bt-undo").disabled = undoStack.length === 0;
     $("bt-redo").disabled = redoStack.length === 0;
     $("bt-addvert").disabled = !(sel?.type === "edge");
@@ -2021,7 +2164,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     try {
       fn();
       pushUndo(snap);
-      dirty = true;
+      if (!opts.cosmetic) dirty = true;
       if (!opts.keepSel) {
         sel = null;
         secondVertex = null;
@@ -2104,6 +2247,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     const irr = num("p-irr", "irregularity", 0, 1);
     const black = num("p-black", "black probability", 0, 1);
     const elong = num("p-elong", "radial elongation", 0.1, 10);
+    const adjBlack = $("p-adjblack").checked;
     const stroke = num("p-stroke", "stroke width", 0.01, 100);
     const distribution = [];
     let sum = 0;
@@ -2152,6 +2296,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
         blackProbability: black,
         strokeWidth: stroke,
         radialElongation: elong,
+        allowAdjacentBlack: adjBlack,
         seed
       },
       errors
@@ -2187,19 +2332,29 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     $("stats").innerHTML = `
     <div class="srow"><span>faces / edges / verts</span><b>${s.faceCount} / ${s.edgeCount} / ${s.vertexCount}</b></div>
     <div class="srow"><span>black fill</span><b>${s.blackAchieved} of ${s.blackTarget} target${short ? " (short)" : ""}</b></div>
+    <div class="srow"><span>black adjacency</span><b>${s.adjacentBlackAllowed ? "allowed" : "blocked"}</b></div>
     <div class="srow"><span>gaps closed / deferred</span><b>${s.closedGaps} / ${s.deferredEdges}</b></div>
     <div class="srow"><span>seed</span><b>${s.seed}</b></div>
     <div class="bars">${bars}</div>
     <div class="legend"><span><span class="sw" style="background:var(--ink-faint)"></span>target</span>
     <span><span class="sw" style="background:var(--accent)"></span>achieved</span></div>
-    ${short ? `<p class="hint" style="margin-top:8px">Black target not reachable without adjacent black faces; constraint kept, shortfall accepted.</p>` : ""}
+    ${short ? `<p class="hint" style="margin-top:8px">Black target not reachable while black shapes are kept apart; shortfall accepted. Turn on "Allow black shapes to touch" to meet it exactly.</p>` : ""}
     ${s.elongationConflicts > 0 ? `<p class="hint" style="margin-top:8px;color:var(--danger)">Radial elongation left ${s.elongationConflicts} edge pair${s.elongationConflicts > 1 ? "s" : ""} crossing. Exports fine; a different seed or gentler factor avoids it.</p>` : ""}
     ${s.elongationCollapsed > 0 ? `<p class="hint" style="margin-top:8px">${s.elongationCollapsed} degenerate sliver${s.elongationCollapsed > 1 ? "s were" : " was"} merged into neighbors during elongation${s.elongationRemoved > 0 ? ` (${s.elongationRemoved} removed, leaving tiny holes)` : ""}.</p>` : ""}`;
   }
-  function runGenerate() {
+  async function runGenerate() {
     const params = validateParams();
     if (!params) return;
-    if (graph && dirty && !confirm("Regenerating replaces the current tessellation and its edits. Continue?")) return;
+    if (graph && dirty) {
+      const ok = await askConfirm(
+        "Regenerating replaces the current tessellation and your edits. Continue?",
+        "Regenerate"
+      );
+      if (!ok) {
+        toast("Kept the current tessellation.");
+        return;
+      }
+    }
     $("tb-status").textContent = "generating\u2026";
     setTimeout(() => {
       try {
@@ -2226,14 +2381,18 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
       }
     }, 20);
   }
-  function runDelete() {
+  async function runDelete() {
     if (!graph || !sel) return;
     const g = graph;
     if (sel.type === "vertex") {
       doOp(() => deleteVertex(g, sel.id));
     } else if (sel.type === "edge") {
       const e = g.e(sel.id);
-      if (e.faces.length === 1 && !confirm("This is a boundary edge; deleting it deletes its face. Continue?")) return;
+      if (e.faces.length === 1) {
+        const ok = await askConfirm("This is a boundary edge; deleting it deletes its face too. Continue?", "Delete");
+        if (!ok) return;
+        if (!graph || sel?.type !== "edge" || sel.id !== e.id) return;
+      }
       doOp(() => deleteEdge(g, sel.id));
     } else {
       doOp(() => deleteFace(g, sel.id));
@@ -2260,7 +2419,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
   }
   function runExport() {
     if (!graph) return;
-    const s = exportSVG(graph, lastParams?.strokeWidth ?? 1.5);
+    const s = exportSVG(graph, lastParams?.strokeWidth ?? 1.5, { blackSeams: showBlackSeams });
     const blob = new Blob([s], { type: "image/svg+xml" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -2268,22 +2427,81 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4e3);
   }
+  function runInvert() {
+    if (!graph) return;
+    const g = graph;
+    let n = 0;
+    for (const f of g.faces.values()) {
+      const c = f.fill.toLowerCase();
+      if (c === "#000000" || c === "#ffffff") n++;
+    }
+    if (n === 0) {
+      toast("No black or white shapes to invert.");
+      return;
+    }
+    doOp(() => {
+      invertBlackWhite(g);
+    }, { keepSel: true, cosmetic: true });
+    toast(`Inverted ${n} shapes.`);
+  }
+  var DEFAULT_SWATCHES = ["#000000", "#ffffff", "#cf5a4e", "#2456e6", "#d9a13c"];
+  var MAX_CUSTOM_SWATCHES = 12;
+  var customSwatches = [];
+  var activeColor = null;
   function positionPicker() {
     const pk = $("picker");
-    const open = paintMode && sel?.type === "face" && !!graph;
+    const open = paintMode && !!graph;
     pk.classList.toggle("open", open);
-    if (open && graph && sel) {
-      $("picker-color").value = normalizeHex(graph.f(sel.id).fill);
-      pk.style.right = "16px";
-      pk.style.top = "14px";
+    if (!open) return;
+    pk.style.right = "16px";
+    pk.style.top = "14px";
+    renderSwatches();
+    const hint = $("picker-hint");
+    hint.textContent = activeColor ? "Click shapes to fill them. Click the swatch again to disarm." : "Pick a color, then click shapes to fill them.";
+    hint.classList.toggle("armed", !!activeColor);
+  }
+  function paletteColors() {
+    return [...DEFAULT_SWATCHES, ...customSwatches];
+  }
+  function renderSwatches() {
+    const host = $("picker-swatches");
+    const colors = paletteColors();
+    if (host.dataset.colors !== colors.join(",")) {
+      host.dataset.colors = colors.join(",");
+      host.textContent = "";
+      for (const c of colors) {
+        const b = document.createElement("button");
+        b.style.background = c;
+        b.dataset.c = c;
+        b.title = c;
+        host.appendChild(b);
+      }
+    }
+    for (const b of Array.from(host.children)) {
+      b.classList.toggle("active", !!activeColor && b.dataset.c === activeColor);
     }
   }
   function normalizeHex(c) {
-    return /^#[0-9a-fA-F]{6}$/.test(c) ? c : "#ffffff";
+    return /^#[0-9a-fA-F]{6}$/.test(c) ? c.toLowerCase() : "#ffffff";
   }
-  function applyPaint(color) {
-    if (!graph || sel?.type !== "face") return;
-    const g = graph, fid = sel.id;
+  function rememberColor(color) {
+    const c = normalizeHex(color);
+    if (paletteColors().includes(c)) return;
+    customSwatches.push(c);
+    if (customSwatches.length > MAX_CUSTOM_SWATCHES) customSwatches.shift();
+  }
+  function armColor(color, opts = {}) {
+    const c = normalizeHex(color);
+    if (opts.remember) rememberColor(c);
+    activeColor = activeColor === c && !opts.remember ? null : c;
+    if (activeColor && sel?.type === "face") applyPaintTo(sel.id, activeColor);
+    positionPicker();
+    renderSel();
+  }
+  function applyPaintTo(fid, color) {
+    if (!graph) return;
+    const g = graph;
+    if (normalizeHex(g.f(fid).fill) === normalizeHex(color)) return;
     doOp(() => paintFace(g, fid, color), { keepSel: true });
   }
   var drag = null;
@@ -2356,6 +2574,10 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
     } else if (t instanceof SVGPathElement && id) {
       sel = { type: "face", id };
       secondVertex = null;
+      if (paintMode && activeColor) {
+        applyPaintTo(id, activeColor);
+        return;
+      }
     } else {
       sel = null;
       secondVertex = null;
@@ -2379,6 +2601,14 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
         h.setAttribute("y1", String(a.y));
         h.setAttribute("x2", String(b.x));
         h.setAttribute("y2", String(b.y));
+      }
+      const sm = seamEls.get(e.id);
+      if (sm) {
+        const a = g.pt(e.a), b = g.pt(e.b);
+        sm.setAttribute("x1", String(a.x));
+        sm.setAttribute("y1", String(a.y));
+        sm.setAttribute("x2", String(b.x));
+        sm.setAttribute("y2", String(b.y));
       }
       for (const fid of e.faces) {
         const fe = faceEls.get(fid);
@@ -2437,13 +2667,14 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
       items.push({ label: "Paint\u2026", fn: () => {
         paintMode = true;
         updateToolbar();
+        renderSel();
       } });
       items.push({
         label: "Toggle black fill",
         fn: () => {
           if (!graph || sel?.type !== "face") return;
           const cur = graph.f(sel.id).fill;
-          applyPaint(cur === "#000000" ? "#ffffff" : "#000000");
+          applyPaintTo(sel.id, cur === "#000000" ? "#ffffff" : "#000000");
         }
       });
       items.push({ label: "Delete face", danger: true, fn: runDelete });
@@ -2469,6 +2700,16 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
   document.addEventListener("keydown", (ev) => {
     const inField = ev.target.tagName === "INPUT";
     const mod = ev.ctrlKey || ev.metaKey;
+    if (modalOpen()) {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        closeModal(true);
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        closeModal(false);
+      }
+      return;
+    }
     if (mod && ev.key.toLowerCase() === "z" && !ev.shiftKey) {
       if (!inField) {
         ev.preventDefault();
@@ -2486,6 +2727,7 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
       sel = null;
       secondVertex = null;
       paintMode = false;
+      activeColor = null;
       hideCtx();
       renderSel();
       updateToolbar();
@@ -2500,15 +2742,41 @@ button.active { border-color: var(--accent); color: #9db4f5; background: var(--a
   $("bt-addedge").addEventListener("click", runAddEdge);
   $("bt-paint").addEventListener("click", () => {
     paintMode = !paintMode;
+    if (!paintMode) activeColor = null;
+    updateToolbar();
+    renderSel();
+  });
+  $("p-seams").addEventListener("change", () => {
+    showBlackSeams = $("p-seams").checked;
+    if (graph) render();
+  });
+  $("bt-verts").addEventListener("click", () => {
+    showVertices = !showVertices;
+    svg.classList.toggle("hide-verts", !showVertices);
+    if (!showVertices) {
+      sel = null;
+      secondVertex = null;
+      toast("Vertices hidden \u2014 canvas now matches the export. Show them to edit vertices.");
+    }
+    renderSel();
     updateToolbar();
   });
+  $("modal-ok").addEventListener("click", () => closeModal(true));
+  $("modal-cancel").addEventListener("click", () => closeModal(false));
+  $("modal").addEventListener("click", (ev) => {
+    if (ev.target === $("modal")) closeModal(false);
+  });
+  $("bt-invert").addEventListener("click", runInvert);
   $("bt-panel").addEventListener("click", () => $("panel").classList.toggle("collapsed"));
   $("dist-add").addEventListener("click", () => {
     addDistRow(6, 0);
     validateParams();
   });
-  $("picker-color").addEventListener("change", (e) => applyPaint(e.target.value));
-  document.querySelectorAll("#picker .swatches button").forEach((b) => b.addEventListener("click", () => applyPaint(b.dataset.c)));
+  $("picker-color").addEventListener("change", (e) => armColor(e.target.value, { remember: true }));
+  $("picker-swatches").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (b?.dataset.c) armColor(b.dataset.c);
+  });
   for (const id of ["p-tiers", "p-width", "p-scale", "p-density", "p-ratio", "p-irr", "p-elong", "p-black", "p-stroke", "p-seed"]) {
     $(id).addEventListener("input", validateParams);
   }

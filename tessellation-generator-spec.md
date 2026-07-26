@@ -14,6 +14,11 @@
 10. **"Rotating calipers" renamed to brute-force rotation search**, which is what the algorithm actually was.
 11. **Boundary edges are no longer double-exported**: face strokes already cover one-face boundary edges; only zero-face naked edges are exported as `<line>` elements.
 12. **Seed polygon construction specified** (v1 said generation starts "from a single seed point" without saying how the first face is made). The falloff constant `k` derivation is now given explicitly.
+18. **(v2.7) Vertex visibility toggle.** Vertex handles are editing chrome and were never exported, which made the canvas an unreliable preview of the finished SVG. They can now be hidden. Implemented as a view setting: no undo entry, no effect on the document or the export, and it persists across regeneration.
+17. **(v2.6) Fixed: inverting made Generate appear broken.** Inversion armed the destructive-regenerate warning, which was gated on `window.confirm`. Browsers let users suppress dialogs for a page's lifetime, after which `confirm` returns false permanently and Generate silently did nothing. Two changes: inversion is now classed as a cosmetic op that stays undoable but does not arm the warning, and both confirmation prompts were replaced with an in-app dialog that cannot be suppressed. The cancel path now also reports itself rather than failing silently.
+16. **(v2.5) Seam rule made switchable.** Exposed as a render setting rather than a generation parameter: it applies live, does not regenerate or mutate the graph, and is deliberately kept out of the undo history.
+15. **(v2.4) White seams between touching black faces.** Since every face is stroked black, adjacent black faces had an invisible shared border and merged visually. Any edge with black on both sides is now drawn white, above all tier groups, in both the canvas and the export. This is a rendering rule only — no topology or fill data changes.
+14. **(v2.3) Black adjacency rule made optional, and a black/white inversion added.** The no-touching constraint is now a toggle: with it off, the black target is met exactly and black faces cluster. Inversion is an editor operation (an involution over black and white fills only), not a generation parameter, so it applies to whatever is on the canvas including hand edits.
 13. **(v2.2) Radial elongation parameter added, then redefined.** v2.1 implemented the literal reading — every radius multiplied by the factor — which is a similarity transform: it changes the exported size and stroke-to-cell ratio but leaves the pattern itself untouched. After clarification (cells themselves should thin into "shards"), v2.2 replaces it with the constant-anisotropy power map r′ = R_N·(r/R_N)^E, the unique radial-displacement map for which every cell's radial-to-tangential aspect changes by the same factor E at every radius. See the parameter's section for the derivation, guards, and repair pipeline.
 
 ---
@@ -182,12 +187,51 @@ Applied at generation time only; not re-applied during editing.
 
 ### Black Fill Assignment
 
-After generation completes:
+Two modes, selected by the "allow black shapes to touch" toggle.
+
+**Rule on (default).** Black faces must form an independent set in the face-adjacency graph. Faces are visited in seeded-shuffle order and taken black only if no neighbor is already black. This is greedy, not optimal — computing a maximum independent set is NP-hard, and the greedy result is what makes generation fast and deterministic. The consequence is that the requested probability is a **ceiling, not a promise**: on typical output the achievable maximum sits near 35–40% of faces, because each black face blocks all of its neighbors. Above that the run falls short, and the shortfall is reported in the stats readout with a pointer to the toggle.
+
+**Rule off.** The shuffled prefix is taken outright with no adjacency test, so the target is met exactly (`floor(faceCount × probability)`), and black faces pool into irregular multi-cell blocks. Note this changes the visual character substantially — it is not merely "more black", since contiguous regions read as shapes in their own right.
+
+The toggle affects fills only. Vertex positions, topology, and every geometric invariant are identical between the two modes for the same seed, which is asserted in the test suite.
+
+### Black Seam Rule
+
+Every face is stroked `#000000`, so two adjacent faces filled `#000000` share an invisible border and read as a single merged shape. Any edge with a black face on both sides is therefore drawn as a white line — same width as the stroke it cancels, `stroke-linecap="round"` so seams meeting at a vertex join cleanly rather than leaving a black dot at each junction.
+
+Both the canvas renderer and the exporter derive these edges from one shared query (`blackSeamEdges`), so the two cannot drift apart. Seams are emitted after every tier group (and are a separate `<g id="black-seams">` in the export) because faces in later tiers would otherwise paint over a seam belonging to an earlier one. They carry no hit-testing and are recomputed on any fill change, including painting and inversion.
+
+The rule is switchable ("separate touching black shapes", default on). It is a **render setting, not a generation parameter or document state**: toggling it rebuilds the seam layer and re-exports, but never regenerates the tessellation, mutates fills, or pushes an undo entry — so it can be flipped freely to compare the two looks without risk to hand edits. `exportSVG` takes it as `{ blackSeams }`, defaulting to true; with it false the seam group is omitted and the export is otherwise byte-identical (asserted in the test suite). The rule can only fire where black faces touch, which happens only when the adjacency rule is off. Measured effect at 45% black with clustering allowed (seed 42, 283 black faces): the black fill area forms 73 connected regions unseamed versus 278 seamed — i.e. it restores near-perfect one-region-per-face separation.
+
+**Known limitation.** Two black faces meeting at only a vertex share no edge, so no seam can separate them; there were 395 such corner contacts in the sample run. The contact has zero area and still reads as two shapes, so it is left alone deliberately. Separating them would require either eroding the faces or punching a white dot at each junction, both of which are visually worse than the problem.
+
+### Vertex Visibility (Preview Mode)
+
+Vertex handles (`circle.vert`) are the only *visible* canvas chrome absent from the export — edge hit targets are already `stroke: transparent`. Toggling visibility therefore only needs a class on the canvas root (`#canvas.hide-verts`), which costs nothing at render time and survives re-renders and regeneration for free, since `render()` replaces group children but not the root's class list.
+
+Hiding uses `display: none` rather than transparency, so handles stop being pointer targets — no invisible click targets. Consequently vertex selection and dragging, and `Add edge` (which requires two selected vertices), are unavailable in preview mode; face-level operations are unaffected.
+
+Entering preview mode clears the entire selection, not just a vertex selection. A hidden selected handle would be unreachable state, and a selected face's highlight is not in the export either, so leaving it would defeat the preview. Selection chrome reappears on the next click, which is interaction feedback rather than stale state.
+
+The toggle is view-only: it pushes no undo entry, never mutates the graph, and does not alter export output. The smoke suite verifies the actual invariant the feature exists for — that in preview mode every handle computes to `display: none`, no selection chrome is present, and the canvas's face count, seam count, naked-edge count and fill multiset all match a real export of the same graph.
+
+### Confirmation Prompts
+
+Destructive actions (regenerating over unsaved edits, deleting a boundary edge and its face) require confirmation. These use an **in-app dialog, never `window.confirm`**: browsers offer users a "prevent this page from creating additional dialogs" control, and once set, `window.confirm` returns false for the rest of the page's life — silently disabling any action gated on it, with no error and no feedback. The in-app dialog is modal over the whole viewport, owns the keyboard while open (Enter confirms, Escape cancels, and undo/redo/delete shortcuts behind it are inert), settles any prior pending prompt as cancelled rather than stranding its promise, and reports the cancel path through a toast so a declined action never looks like a dead button.
+
+Which operations arm the "you have unsaved edits" warning is deliberate: structural edits and painting do; **inversion does not**, since it is a single global flip that one further click restores, so warning on it is pure friction. Inversion remains fully undoable — `doOp` separates "push an undo entry" from "arm the destructive warning" via its `cosmetic` flag.
+
+### Black/White Inversion
+
+An editor operation, not a generation parameter: it applies to the current canvas state, including hand edits, and is a single undo step. Every face filled pure black becomes pure white and vice versa; faces painted any other color are untouched, so hand-painted accents survive. The operation is an involution — applying it twice restores every fill exactly — which is what allows it to serve as a toggle rather than needing separate "invert" and "revert" actions. Faces are matched on exact hex value (`#000000` / `#ffffff`), case-insensitively.
+
+Algorithm, after generation completes:
 
 1. Target count: `floor(total_faces * black_probability)`.
-2. Build the face adjacency graph (faces adjacent iff they share ≥ 1 edge) by iterating half-edges.
-3. Greedy independent set: shuffle the face list; iterate, marking a face black if no neighbor is already black; stop at the target count.
-4. **No two black faces share an edge — hard constraint.** If the greedy pass exhausts the face list before reaching the target (possible at high `black_probability`), accept the shortfall and report the achieved count and fraction to the user. Do not violate the adjacency constraint to hit the target.
+2. If the rule is on, build the face adjacency graph (faces adjacent iff they share ≥ 1 edge) from edge–face incidence.
+3. Shuffle the face list with the run's seeded RNG.
+4. Iterate the shuffled list, marking each face black — subject to the no-adjacent-black test when the rule is on — and stop at the target count.
+5. Report achieved count, target, and which mode was used. When the rule is on and the greedy pass exhausts the list first, accept the shortfall; never violate the constraint to hit the target.
 
 ---
 
@@ -205,6 +249,8 @@ Presented in a settings panel before generation. All parameters must be validate
 | Polygon irregularity | float [0, 1] | 0 = regular polygons, 1 = maximum irregularity |
 | Polygon type distribution | table | Sides → probability, must sum to 1.0; treated as a bias (see above) |
 | Black fill probability | float [0, 1] | Target fraction of black-filled polygons (best-effort under adjacency constraint) |
+| Separate touching black shapes | boolean | Render setting (not part of generation): white seam on any edge with black on both sides. Default on; applies live |
+| Allow black shapes to touch | boolean | Off: black faces form an independent set (target is a ceiling). On: shuffled prefix taken outright, target met exactly, black clusters |
 | Radial elongation | float [0.1, 10] | Final modifier: constant-anisotropy radial map; every cell's radial aspect changes by exactly this factor. 1 = off; >1 shards, <1 arcs |
 | Stroke width | number > 0 | Outline thickness in document units |
 
